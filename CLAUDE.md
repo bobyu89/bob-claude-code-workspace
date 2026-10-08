@@ -1,9 +1,14 @@
 # 專案規範
 
+## 新專案
+
+- `README.md` 若仍含 `<!-- template-readme -->` 標記，代表還是範本原文：第一次開工時先改寫成本專案的名稱與簡介，並移除標記。
+
 ## 溝通
 
 - 一律使用繁體中文；醫學術語保留英文（例：Sepsis、Delirium、qSOFA）。
 - 程式碼、指令、檔案路徑維持原文。
+- 依 skill 範本產出的文件（PRD、tickets），英文章節標題寫成「中文（English）」，例：`## 問題陳述（Problem Statement）`。
 
 ## 檔名格式
 
