@@ -118,8 +118,8 @@ def _infer_variable(name: str, s: pd.Series) -> Variable:
         if uniques and (uniques <= {0, 1} or (is_integer and n_unique == 2)):
             # dichotomous codes such as 0/1 or 1/2
             return Variable(type="numeric", level="nominal", ambiguous=True, **common)
-        if is_integer and 3 <= n_unique <= 7 and values.min() >= 0 and values.max() <= 10:
-            # Likert-like codes: could be an ordinal item or a short scale.
+        if is_integer and 3 <= n_unique <= 7:
+            # few distinct whole numbers (Likert items, coded categories): could be ordinal or a short scale
             return Variable(type="numeric", level="ordinal", ambiguous=True, **common)
         return Variable(type="numeric", level="scale", ambiguous=False, **common)
     return Variable(type="string", level="nominal", ambiguous=False, **common)

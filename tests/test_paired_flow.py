@@ -206,3 +206,24 @@ def test_runs_listing_and_execution_log(ws):
     assert "user_confirmation" in events and "engine_finished" in events
     states = [h["state"] for h in ws.get_run(run.id).history]
     assert states[-3:] == ["USER_APPROVAL", "EXECUTING", "EXECUTED"]
+
+
+def test_malformed_engine_output_marks_run_failed(ws, monkeypatch):
+    from aistat.engines.python_engine import PythonEngine
+
+    run = approved_run(ws)
+
+    def broken_run(self, script, data, out, cwd, timeout):
+        out.write_text("{not json", encoding="utf-8")
+
+    monkeypatch.setattr(PythonEngine, "run", broken_run)
+    with pytest.raises(AistatError, match="格式"):
+        ws.execute(run.id, engine="python")
+    assert ws.get_run(run.id).status == "FAILED"
+
+
+def test_manifest_records_plan_parameters(ws):
+    run = ws.create_plan("paired-t-test", PAIRED, options={"alpha": 0.01})
+
+    assert run.manifest["parameters"]["variables"] == PAIRED
+    assert run.manifest["parameters"]["options"]["alpha"] == 0.01

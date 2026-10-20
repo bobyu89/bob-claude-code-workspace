@@ -99,3 +99,11 @@ def test_report_apa_regression(ws):
 
     assert "F(1, 3) = 4.50, p = .124, R² = .60" in text
     assert "| hours | 0.60 | 0.28 | .77 | 2.12 | .124 | [-0.30, 1.50] |" in text
+
+
+def test_user_confirmed_ordinal_predictor_is_blocked(ws):
+    ws.set_variable_level("textbook_xy", "rank_item", "ordinal")
+
+    run = ws.create_plan("linear-regression", {"outcome": "score", "predictors": "rank_item"}, dataset_id="textbook_xy")
+
+    assert check(ws.method_review(run.id), "measurement_level").verdict == "NO"

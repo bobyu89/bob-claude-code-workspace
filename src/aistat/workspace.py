@@ -32,7 +32,7 @@ META_DIR = ".aistat"
 WORKSPACE_FILE = "workspace.json"
 SCHEMA_VERSION = 1
 DEFAULT_TIMEOUT = 120.0
-REVIEWABLE = ("EXECUTED", "JEV_GATE_B", "REPORT_GENERATED", "EXPORTED")
+REVIEWABLE = ("EXECUTED", "JEV_GATE_B", "REPORT_GENERATED")  # an exported run is frozen
 LANGS = ("zh", "en")
 
 
@@ -261,6 +261,8 @@ class Workspace:
         }
         run.write_json("analysis_plan.json", plan)
         run.manifest["method"] = spec.id
+        run.manifest["parameters"] = {"variables": variables, "options": options,
+                                      "missing_strategy": spec.missing_strategy}
         run.set_status("PLAN_DRAFTED", method=spec.id)
         self._audit("plan_created", run_id=run.id, dataset_id=ds.id, method=spec.id)
         return self.validate_plan(run.id)
@@ -360,9 +362,12 @@ class Workspace:
         run.log("engine_started", engine=adapter.name, script=adapter.script_name, timeout_s=timeout)
         started = time.monotonic()
         try:
-            adapter.run(script, data_path, out, cwd=run.dir, timeout=timeout)
-            results = json.loads(out.read_text(encoding="utf-8"))
-            if results.get("method") != plan["method"] or "engine" not in results:
+            try:
+                adapter.run(script, data_path, out, cwd=run.dir, timeout=timeout)
+                results = json.loads(out.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:  # cannot launch the engine, or unreadable output
+                raise EngineFailed(f"{adapter.name} 引擎執行失敗或輸出格式不符：{e}") from e
+            if not isinstance(results, dict) or results.get("method") != plan["method"] or "engine" not in results:
                 raise EngineFailed("引擎輸出格式不符（缺少 engine 或 method 不一致）")
         except EngineFailed as e:
             out.unlink(missing_ok=True)
@@ -396,12 +401,13 @@ class Workspace:
         run = self.get_run(run_id)
         _check_lang(lang)
         plan = run.plan
-        return reporting.build_draft(plan, self.results(run.id), run.manifest, methods.get_method(plan["method"]), lang)
+        return reporting.build_draft(plan, self.results(run.id), methods.get_method(plan["method"]), lang)
 
     def review(self, run_id: str, draft: str | None = None, lang: str = "zh") -> validation.Review:
         """JEV Gate B on a report draft (the generated one unless `draft` text is given)."""
         run = self.get_run(run_id)
-        run.require(*REVIEWABLE, action="審查結果", hint="請先執行分析（`aistat analyze`）。")
+        run.require(*REVIEWABLE, action="審查結果",
+                    hint="尚未執行請先 `aistat analyze`；已匯出的分析已凍結，請建立新的 run。")
         plan = run.plan
         out = run.dir / "raw_outputs" / "results.json"
         results = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else None
@@ -447,6 +453,9 @@ class Workspace:
             plan = run.plan
             run.write_text("learning_notes.md", reporting.method_report(plan["method"]).learning(
                 plan, self.results(run.id), methods.get_method(plan["method"])))
+        outputs = ["statistical_report.md"] + (["learning_notes.md"] if mode == "learning" else [])
+        run.manifest["outputs"].update({name: datamod.sha256_file(run.dir / name) for name in outputs})
+        run.save()
         run.log("report_generated", lang=lang, mode=mode, draft_source="supplied" if draft is not None else "generated")
         run.set_status("REPORT_GENERATED")
         return path
@@ -466,20 +475,22 @@ class Workspace:
         changed = sorted(k for k, v in recorded.items() if current.get(k) != v)
         if changed:
             raise InvalidState(f"以下檔案與執行時紀錄的雜湊不符，拒絕匯出：{', '.join(changed)}")
-        run.log("bundle_exported", include_data=include_data)
-        run.set_status("EXPORTED")
-        run.manifest["data_included"] = include_data
-        run.manifest["outputs"] = {**current, **recorded}
-        run.save()
         path = Path(path) if path else self.root / "exports" / f"{run.id}.zip"
         path.parent.mkdir(parents=True, exist_ok=True)
+        live = ("manifest.json", "execution_log.json")  # written last, after the state change
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             for p in sorted(run.dir.rglob("*")):
-                if p.is_file():
+                if p.is_file() and p.relative_to(run.dir).as_posix() not in live:
                     zf.write(p, f"{run.id}/{p.relative_to(run.dir).as_posix()}")
             if include_data:
                 zf.write(self.dataset_dir(plan["dataset_id"]) / "data.csv", f"{run.id}/data/data.csv")
             zf.writestr(f"{run.id}/README.md", _bundle_readme(run, include_data))
+            run.manifest["data_included"] = include_data
+            run.manifest["outputs"] = {**current, **recorded}
+            run.log("bundle_exported", include_data=include_data, path=path.name)
+            run.set_status("EXPORTED")
+            for name in live:
+                zf.write(run.dir / name, f"{run.id}/{name}")
         self._audit("bundle_exported", run_id=run.id, include_data=include_data)
         return path
 

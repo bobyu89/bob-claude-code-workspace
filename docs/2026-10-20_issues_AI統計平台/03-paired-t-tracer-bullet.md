@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 03：配對 t 檢定 tracer bullet（plan → Gate A → approve → analyze，Python 引擎）
 
@@ -6,11 +6,11 @@ Status: ready-for-agent
 
 **相依（Blocked by）：** 02。
 
-- [ ] `aistat plan --method paired-t-test --var before=X --var after=Y` 建立 `runs/RUN_YYYYMMDD_NNN/`
-- [ ] Gate A 檢查 `variables_exist`、`measurement_level`、`pairing_structure`、`missing_data`、`sample_size`、`assumptions_planned`
-- [ ] 有 NO 時 run 進 BLOCKED，無法 approve
-- [ ] UNCERTAIN 需 `aistat approve RUN --confirm CHECK_ID` 才能核准；確認紀錄寫入 log
-- [ ] 未核准的 run 無法 analyze
-- [ ] Python 引擎輸出平均差、95% CI、t、df、p、d_z、差值 Shapiro-Wilk，與 R `sleep` 範例的已知值一致
-- [ ] 引擎錯誤或逾時 → FAILED 並保存錯誤
-- [ ] `aistat runs`、`aistat status RUN` 顯示狀態與歷程
+- [x] `aistat plan --method paired-t-test --var before=X --var after=Y` 建立 `runs/RUN_YYYYMMDD_NNN/`
+- [x] Gate A 檢查 `variables_exist`、`measurement_level`、`pairing_structure`、`missing_data`、`sample_size`、`assumptions_planned`
+- [x] 有 NO 時 run 進 BLOCKED，無法 approve
+- [x] UNCERTAIN 需 `aistat approve RUN --confirm CHECK_ID` 才能核准；確認紀錄寫入 log
+- [x] 未核准的 run 無法 analyze
+- [x] Python 引擎輸出平均差、95% CI、t、df、p、d_z、差值 Shapiro-Wilk，與 R `sleep` 範例的已知值一致
+- [x] 引擎錯誤或逾時 → FAILED 並保存錯誤
+- [x] `aistat runs`、`aistat status RUN` 顯示狀態與歷程

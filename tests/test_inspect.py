@@ -87,3 +87,13 @@ def test_export_dictionary_csv(ws, tmp_path):
     assert [r["name"] for r in rows] == ["sid", "ward", "likert", "score", "const"]
     assert rows[3]["n_missing"] == "3"
     assert rows[3]["level"] == "scale"
+
+
+def test_few_distinct_integer_values_are_flagged_as_ambiguous(tmp_path):
+    ws = Workspace.init(tmp_path / "proj")
+    src = tmp_path / "coded.csv"
+    src.write_text("dose\n10\n20\n30\n40\n50\n10\n20\n30\n", encoding="utf-8")
+    ws.import_dataset(src)
+
+    var = ws.get_dictionary("coded")["dose"]
+    assert (var.level, var.ambiguous) == ("ordinal", True)

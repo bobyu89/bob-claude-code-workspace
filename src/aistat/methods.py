@@ -27,9 +27,10 @@ class Assumption:
     label: str
     alternative: str  # what to consider when violated
     when: tuple[tuple[str, str], ...] = ()  # option values under which it applies, e.g. (("method", "pearson"),)
+    min_multiple: int = 0  # needs at least this many variables in the method's multiple role
 
-    def applies(self, options: dict) -> bool:
-        return all(options.get(k) == v for k, v in self.when)
+    def applies(self, options: dict, n_multiple: int = 0) -> bool:
+        return n_multiple >= self.min_multiple and all(options.get(k) == v for k, v in self.when)
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,9 @@ class MethodSpec:
     options: dict = field(default_factory=dict)  # option -> allowed values (tuple)
     string_roles: tuple[str, ...] = ()  # roles read as text; their levels are fixed in the plan
     per_predictor_n: int = 0  # recommended cases per variable in a multiple role (rule of thumb)
+    exact_groups: int | None = None  # categorical roles must have exactly this many levels
+    min_per_group: int = 1  # minimum valid cases per level of a categorical role
+    text_unless_scale: bool = False  # read every non-scale variable of the multiple role as text (descriptives)
 
     def role(self, name: str) -> Role:
         return next(r for r in self.roles if r.name == name)
@@ -67,6 +71,7 @@ _register(
         roles=(Role("variables", "變項", ("nominal", "ordinal", "scale"), multiple=True),),
         missing_strategy="available-case",
         min_n=1,
+        text_unless_scale=True,
     )
 )
 
@@ -114,6 +119,8 @@ _register(
         design_checks=("independence",),
         options={"alternative": ("two-sided",)},
         string_roles=("group",),
+        exact_groups=2,
+        min_per_group=2,
     )
 )
 
@@ -166,7 +173,8 @@ _register(
         name_en="linear regression",
         roles=(
             Role("outcome", "依變項", ("scale",), numeric=True),
-            Role("predictors", "預測變項", ("scale", "ordinal", "nominal"), numeric=True, multiple=True),
+            # nominal only as a 0/1 (two-level) numeric code; see predictor_coding in Gate A
+            Role("predictors", "預測變項", ("scale", "nominal"), numeric=True, multiple=True),
         ),
         missing_strategy="listwise",
         min_n=3,
@@ -177,7 +185,7 @@ _register(
             Assumption("homoscedasticity", "殘差變異數同質",
                        "可考慮使用 robust（HC3）標準誤，或轉換依變項"),
             Assumption("multicollinearity", "預測變項之間沒有嚴重共線性",
-                       "可考慮移除或合併高度相關的預測變項"),
+                       "可考慮移除或合併高度相關的預測變項", min_multiple=2),
         ),
     )
 )
@@ -216,18 +224,17 @@ def normalize_variables(spec: MethodSpec, variables: dict) -> dict:
 
 
 def planned_assumptions(spec: MethodSpec, variables: dict, options: dict) -> list[str]:
-    ids = [a.id for a in spec.assumptions if a.applies(options)]
-    if spec.id == "linear-regression" and len(variables["predictors"]) < 2:
-        ids.remove("multicollinearity")
-    return ids
+    n_multiple = sum(len(variables[r.name]) for r in spec.roles if r.multiple)
+    return [a.id for a in spec.assumptions if a.applies(options, n_multiple)]
 
 
 def categorical_columns(spec: MethodSpec, variables: dict, dictionary: dict) -> list[str]:
     """Columns the engines read as text: the spec's categorical roles, plus (for descriptives)
     every requested variable that is not on a scale level."""
     cols = [variables[r] for r in spec.string_roles]
-    if spec.id == "descriptives":
-        cols += [c for c in variables["variables"] if c in dictionary and dictionary[c].level != "scale"]
+    if spec.text_unless_scale:
+        multiple = [c for r in spec.roles if r.multiple for c in variables[r.name]]
+        cols += [c for c in multiple if c in dictionary and dictionary[c].level != "scale"]
     return cols
 
 

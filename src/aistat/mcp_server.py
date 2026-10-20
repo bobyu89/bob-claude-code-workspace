@@ -16,7 +16,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from . import __version__, methods, reporting
 from .errors import AistatError
-from .workspace import Workspace
+from .validation import UNCERTAIN
+from .workspace import DEFAULT_TIMEOUT, Workspace
 
 INSTRUCTIONS = """\
 aistat：可重現、可審查的統計分析。所有統計數值都必須來自 execute_statistical_analysis 的引擎輸出，
@@ -29,7 +30,7 @@ review_statistical_results（JEV Gate B）→ generate_statistical_report → ex
 def _next_step(run, review) -> str:
     if run.status == "BLOCKED":
         return "Gate A 有 NO 項目：請依理由修正（例如 `aistat dictionary set`）後呼叫 validate_analysis_plan，或建立新計畫。"
-    pending = "".join(f" --confirm {c.check_id}" for c in review.by_verdict("UNCERTAIN"))
+    pending = "".join(f" --confirm {c.check_id}" for c in review.by_verdict(UNCERTAIN))
     return (f"請把 Gate A 結果說明給研究者，由研究者本人確認後在終端機執行：aistat approve {run.id}{pending}。"
             "核准後才能呼叫 execute_statistical_analysis。")
 
@@ -59,7 +60,7 @@ def create_server(workspace: Path | str) -> MCPServer:
             {"id": m.id, "name_zh": m.name_zh, "name_en": m.name_en,
              "roles": [{"name": r.name, "label": r.label, "levels": list(r.levels), "multiple": r.multiple}
                        for r in m.roles],
-             "options": {k: list(v) for k, v in m.options.items()} | {"alpha": 0.05, "conf_level": 0.95}}
+             "options": {k: list(v) for k, v in m.options.items()} | methods.COMMON_OPTIONS}
             for m in methods.METHODS.values()
         ]}
 
@@ -106,7 +107,7 @@ def create_server(workspace: Path | str) -> MCPServer:
         return {"run_id": run.id, "status": run.status, "gate_a": review.to_dict(), "next_step": _next_step(run, review)}
 
     @tool
-    def execute_statistical_analysis(run_id: str, engine: str = "auto", timeout: float = 120.0) -> dict:
+    def execute_statistical_analysis(run_id: str, engine: str = "auto", timeout: float = DEFAULT_TIMEOUT) -> dict:
         """Run an approved plan on a real statistical engine (r | python | auto)."""
         w = ws()
         run = w.execute(run_id, engine=engine, timeout=timeout)

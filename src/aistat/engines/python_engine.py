@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from .. import __version__
-from .base import EngineAdapter
+from .base import EngineAdapter, fill_template
 
 PRELUDE = '''\
 #!/usr/bin/env python3
@@ -258,12 +257,6 @@ class PythonEngine(EngineAdapter):
         return [sys.executable, "-I"]
 
     def render_script(self, plan: dict, default_data: str) -> str:
-        body = METHOD_CODE[plan["method"]]
-        head = (
-            PRELUDE.replace("__AISTAT_VERSION__", __version__)
-            .replace("__RUN_ID__", plan["run_id"])
-            .replace("__METHOD__", plan["method"])
-            .replace("__PLAN_JSON__", repr(json.dumps(plan, ensure_ascii=False)))
-            .replace("__DEFAULT_DATA__", repr(default_data))
-        )
-        return head + body + FOOTER
+        head = fill_template(PRELUDE, plan, PLAN_JSON=repr(json.dumps(plan, ensure_ascii=False)),
+                             DEFAULT_DATA=repr(default_data))
+        return head + METHOD_CODE[plan["method"]] + FOOTER

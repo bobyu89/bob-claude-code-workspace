@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 02：資料檢查、品質報告與資料字典
 
@@ -6,8 +6,8 @@ Status: ready-for-agent
 
 **相依（Blocked by）：** 01。
 
-- [ ] 預覽前 N 列
-- [ ] 品質問題：高缺失比例、常數欄、重複列、疑似 ID 欄、少數值數值欄（尺度可疑）
-- [ ] 品質報告可寫成 `quality_report.md`
-- [ ] 修正尺度後尺度來源變為 `user`，並寫入 audit log
-- [ ] 不存在的變項或不合法尺度 → 清楚錯誤
+- [x] 預覽前 N 列
+- [x] 品質問題：高缺失比例、常數欄、重複列、疑似 ID 欄、少數值數值欄（尺度可疑）
+- [x] 品質報告可寫成 `quality_report.md`
+- [x] 修正尺度後尺度來源變為 `user`，並寫入 audit log
+- [x] 不存在的變項或不合法尺度 → 清楚錯誤

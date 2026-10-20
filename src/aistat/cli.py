@@ -10,7 +10,8 @@ import typer
 
 from . import reporting
 from .errors import AistatError, PlanError
-from .workspace import Workspace
+from .validation import NO, UNCERTAIN, YES
+from .workspace import DEFAULT_TIMEOUT, Workspace
 
 app = typer.Typer(
     help="AI-native 開源統計分析平台。所有統計數值由實際統計引擎計算。",
@@ -138,7 +139,7 @@ def _pairs(items: list[str], what: str) -> dict:
 
 def _print_review(review) -> None:
     for c in review.checks:
-        color = {"YES": typer.colors.GREEN, "NO": typer.colors.RED}.get(c.verdict, typer.colors.YELLOW)
+        color = {YES: typer.colors.GREEN, NO: typer.colors.RED}.get(c.verdict, typer.colors.YELLOW)
         typer.secho(f"  [{c.verdict}] {c.check_id}：{c.reason}", fg=color)
 
 
@@ -150,7 +151,7 @@ def _print_gate_a_next_step(ws: Workspace, run) -> None:
         typer.echo("\n計畫被擋下：請依 NO 項目修正（例如 `aistat dictionary set`）後執行 "
                    f"`aistat validate {run.id}`，或建立新計畫。")
     elif run.status == "JEV_GATE_A":
-        pending = [c.check_id for c in review.by_verdict("UNCERTAIN")]
+        pending = [c.check_id for c in review.by_verdict(UNCERTAIN)]
         confirm = "".join(f" --confirm {c}" for c in pending)
         typer.echo(f"\n確認上述內容無誤後，請由研究者本人核准：aistat approve {run.id}{confirm}")
 
@@ -193,7 +194,7 @@ def approve(
 def analyze(
     run_id: str,
     engine: str = typer.Option("auto", help="auto | r | python"),
-    timeout: float = typer.Option(120.0, help="引擎逾時秒數"),
+    timeout: float = typer.Option(DEFAULT_TIMEOUT, help="引擎逾時秒數"),
 ) -> None:
     """以實際統計引擎執行已核准的分析計畫。"""
     ws = _ws()
@@ -279,7 +280,7 @@ def export(
 
 @app.command()
 @handles_errors
-def rerun(run_id: str, timeout: float = typer.Option(120.0, help="引擎逾時秒數")) -> None:
+def rerun(run_id: str, timeout: float = typer.Option(DEFAULT_TIMEOUT, help="引擎逾時秒數")) -> None:
     """以相同程式碼與資料重新執行，核對輸出是否一致。"""
     result = _ws().rerun(run_id, timeout=timeout)
     if result.match:

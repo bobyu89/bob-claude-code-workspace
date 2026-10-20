@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from . import apa
 from .methods import MethodSpec
+from .validation import UNCERTAIN
 
 JEV_HEADING = "## JEV 審查紀錄（JEV Review）"
 CITATION_TOKENS = {"1988"}  # Cohen (1988), the only literal numbers the templates write
@@ -700,7 +701,7 @@ def assumption_lines(results: dict, spec: MethodSpec, lang: str) -> list[str]:
     return lines
 
 
-def build_draft(plan: dict, results: dict, manifest: dict, spec: MethodSpec, lang: str = "zh") -> str:
+def build_draft(plan: dict, results: dict, spec: MethodSpec, lang: str = "zh") -> str:
     r = method_report(plan["method"])
     zh = lang == "zh"
     method_name = spec.name_zh if zh else spec.name_en
@@ -728,7 +729,7 @@ def jev_appendix(review, lang: str) -> str:
     zh = lang == "zh"
     lines = [JEV_HEADING, ""]
     lines += [f"- `{c.verdict}` `{c.check_id}`：{c.reason}" for c in review.checks]
-    uncertain = review.by_verdict("UNCERTAIN")
+    uncertain = review.by_verdict(UNCERTAIN)
     if uncertain:
         lines += ["", "審查提醒：以上 UNCERTAIN 項目需要研究者判斷後再定稿。" if zh
                   else "Reminder: UNCERTAIN items above need the researcher's judgement before finalising."]

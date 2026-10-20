@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 10：基本線性迴歸
 
@@ -6,7 +6,7 @@ Status: ready-for-agent
 
 **相依（Blocked by）：** 06。
 
-- [ ] 每個係數 B、SE、t、p、95% CI、標準化 β；模型 R²、調整後 R²、F、df1、df2、p
-- [ ] 殘差 Shapiro-Wilk；兩個以上預測變項時輸出 VIF
-- [ ] 多類別 nominal 預測變項 → Gate A NO
-- [ ] 兩引擎一致，並與教科書手算例題一致
+- [x] 每個係數 B、SE、t、p、95% CI、標準化 β；模型 R²、調整後 R²、F、df1、df2、p
+- [x] 殘差 Shapiro-Wilk；兩個以上預測變項時輸出 VIF
+- [x] 多類別 nominal 預測變項 → Gate A NO
+- [x] 兩引擎一致，並與教科書手算例題一致

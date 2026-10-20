@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 09：相關分析（Pearson / Spearman）
 
@@ -6,6 +6,6 @@ Status: ready-for-agent
 
 **相依（Blocked by）：** 06。
 
-- [ ] Pearson：r、t、df、p、95% CI；Spearman：ρ、p（t 近似）
-- [ ] 兩引擎一致，Pearson 與手算例題一致
-- [ ] Pearson 檢查兩變項常態性；Spearman 可用 ordinal 變項
+- [x] Pearson：r、t、df、p、95% CI；Spearman：ρ、p（t 近似）
+- [x] 兩引擎一致，Pearson 與手算例題一致
+- [x] Pearson 檢查兩變項常態性；Spearman 可用 ordinal 變項

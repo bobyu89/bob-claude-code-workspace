@@ -86,6 +86,14 @@ runs/RUN_20261020_001/
 
 ## AI Agent 與 MCP
 
+在研究專案資料夾（已 `aistat init`）向 Claude Code 註冊 MCP Server：
+
+```bash
+claude mcp add --scope project aistat -- aistat-mcp --workspace .
+```
+
+這會在專案根目錄寫入 `.mcp.json`；也可以手動建立同內容的檔案：
+
 ```json
 { "mcpServers": { "aistat": { "command": "aistat-mcp", "args": ["--workspace", "."] } } }
 ```

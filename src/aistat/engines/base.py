@@ -12,9 +12,18 @@ import subprocess
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from .. import __version__
 from ..errors import EngineFailed, EngineUnavailable
 
 STDERR_LIMIT = 2000
+
+
+def fill_template(template: str, plan: dict, **placeholders: str) -> str:
+    """Replace the header placeholders shared by every engine, then engine-specific `__NAME__` ones."""
+    values = {"AISTAT_VERSION": __version__, "RUN_ID": plan["run_id"], "METHOD": plan["method"], **placeholders}
+    for name, value in values.items():
+        template = template.replace(f"__{name}__", value)
+    return template
 
 
 class EngineAdapter(ABC):

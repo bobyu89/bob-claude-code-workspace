@@ -96,3 +96,28 @@ def test_export_refuses_tampered_raw_output(ws, reported, tmp_path):
 
     with pytest.raises(InvalidState, match="results.json"):
         ws.export(reported.id, tmp_path / "out.zip")
+
+
+def test_report_edited_after_gate_b_cannot_be_exported(ws, reported, tmp_path):
+    report = reported.dir / "statistical_report.md"
+    report.write_text(report.read_text(encoding="utf-8") + "\n這證明 drug2 有效（p = .000）。\n", encoding="utf-8")
+
+    with pytest.raises(InvalidState, match="statistical_report.md"):
+        ws.export(reported.id, tmp_path / "out.zip")
+
+
+def test_export_can_be_repeated(ws, reported, tmp_path):
+    ws.export(reported.id, tmp_path / "a.zip")
+
+    with pytest.raises(InvalidState):
+        ws.review(reported.id)  # exported runs are frozen
+    assert ws.export(reported.id, tmp_path / "b.zip").is_file()
+
+
+def test_failed_export_does_not_mark_run_exported(ws, reported, tmp_path):
+    blocker = tmp_path / "not_a_dir"
+    blocker.write_text("x", encoding="utf-8")
+
+    with pytest.raises(OSError):
+        ws.export(reported.id, blocker / "out.zip")
+    assert ws.get_run(reported.id).status == "REPORT_GENERATED"

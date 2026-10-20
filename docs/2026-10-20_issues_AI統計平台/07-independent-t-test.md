@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 07：獨立樣本 t 檢定
 
@@ -6,6 +6,6 @@ Status: ready-for-agent
 
 **相依（Blocked by）：** 06。
 
-- [ ] Gate A：分組恰兩組（否則 NO）、`independence` 需確認
-- [ ] 兩引擎輸出 Welch 與 Student 結果、Brown-Forsythe Levene、各組描述統計、Cohen's d，與 R `sleep` Welch 範例已知值一致
-- [ ] 報告以 Welch 為主，Levene 結果寫入假設檢查
+- [x] Gate A：分組恰兩組（否則 NO）、`independence` 需確認
+- [x] 兩引擎輸出 Welch 與 Student 結果、Brown-Forsythe Levene、各組描述統計、Cohen's d，與 R `sleep` Welch 範例已知值一致
+- [x] 報告以 Welch 為主，Levene 結果寫入假設檢查

@@ -143,12 +143,13 @@ def _group_structure(plan, spec, complete, dictionary) -> Check:
         counts = complete[col].astype(str).value_counts().sort_index()
         evidence.append({"role": role, "variable": col, "counts": {str(k): int(v) for k, v in counts.items()}})
         k = len(counts)
-        if spec.id == "independent-t-test" and k != 2:
-            problems.append(f"{col} 有 {k} 組（{'、'.join(map(str, counts.index))}），{spec.name_zh}需要恰好兩組")
+        if spec.exact_groups is not None and k != spec.exact_groups:
+            problems.append(f"{col} 有 {k} 組（{'、'.join(map(str, counts.index))}），"
+                            f"{spec.name_zh}需要恰好 {spec.exact_groups} 組")
         elif k < 2:
             problems.append(f"{col} 只有 {k} 個類別，無法比較")
-        elif spec.id == "independent-t-test" and counts.min() < 2:
-            problems.append(f"{col} 有組別少於 2 筆有效資料")
+        elif counts.min() < spec.min_per_group:
+            problems.append(f"{col} 有組別少於 {spec.min_per_group} 筆有效資料")
     if problems:
         return Check(GATE_A, "group_structure", NO, "；".join(problems), evidence, "fix_plan")
     return Check(GATE_A, "group_structure", YES, "分組結構符合方法要求", evidence)

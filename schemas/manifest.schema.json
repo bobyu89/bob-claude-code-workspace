@@ -110,6 +110,32 @@
         "type": "string",
         "pattern": "^[0-9a-f]{64}$"
       }
+    },
+    "parameters": {
+      "type": "object",
+      "required": [
+        "variables",
+        "options",
+        "missing_strategy"
+      ],
+      "properties": {
+        "variables": {
+          "type": "object"
+        },
+        "options": {
+          "type": "object"
+        },
+        "missing_strategy": {
+          "type": "string"
+        }
+      }
+    },
+    "data_included": {
+      "type": "boolean"
+    },
+    "executed_data_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     }
   }
 }
