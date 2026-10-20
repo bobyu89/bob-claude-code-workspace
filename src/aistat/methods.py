@@ -102,6 +102,27 @@ _register(
 )
 
 
+_register(
+    MethodSpec(
+        id="chi-square",
+        name_zh="卡方獨立性檢定",
+        name_en="chi-square test of independence",
+        roles=(
+            Role("row", "列變項", ("nominal", "ordinal")),
+            Role("column", "欄變項", ("nominal", "ordinal")),
+        ),
+        missing_strategy="listwise",
+        min_n=4,
+        assumptions=(
+            Assumption("expected_counts", "期望次數足夠",
+                       "可考慮 Fisher's exact test，或合併人數過少的類別"),
+        ),
+        design_checks=("independence",),
+        string_roles=("row", "column"),
+    )
+)
+
+
 def get_method(method: str) -> MethodSpec:
     if method not in METHODS:
         raise PlanError(f"不支援的統計方法：{method}（可用：{', '.join(METHODS)}）")
@@ -132,6 +153,15 @@ def normalize_variables(spec: MethodSpec, variables: dict) -> dict:
     if dups:
         raise PlanError(f"同一個欄位不能同時擔任多個角色：{', '.join(dups)}")
     return out
+
+
+def categorical_columns(spec: MethodSpec, variables: dict, dictionary: dict) -> list[str]:
+    """Columns the engines read as text: the spec's categorical roles, plus (for descriptives)
+    every requested variable that is not on a scale level."""
+    cols = [variables[r] for r in spec.string_roles]
+    if spec.id == "descriptives":
+        cols += [c for c in variables["variables"] if c in dictionary and dictionary[c].level != "scale"]
+    return cols
 
 
 def plan_columns(variables: dict) -> list[str]:

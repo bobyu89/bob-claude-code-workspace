@@ -78,11 +78,42 @@ writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
 '''
 
 METHOD_CODE = {
+    "chi-square": r'''
+rv <- V$row
+cv <- V$column
+d <- df[complete.cases(df[, c(rv, cv)]), c(rv, cv), drop = FALSE]
+RL <- unlist(PLAN$levels[[rv]])
+CL <- unlist(PLAN$levels[[cv]])
+obs <- table(factor(d[[rv]], levels = RL), factor(d[[cv]], levels = CL))
+ct <- suppressWarnings(chisq.test(obs, correct = FALSE))
+ex <- ct$expected
+n <- sum(obs)
+k <- min(dim(obs)) - 1
+rows <- function(m) lapply(seq_len(nrow(m)), function(i) as.list(unname(as.numeric(m[i, ]))))
+below <- sum(ex < 5)
+statistics <- list(
+  n = n,
+  n_excluded = nrow(df) - n,
+  row_levels = as.list(RL),
+  column_levels = as.list(CL),
+  observed = rows(obs),
+  expected = rows(ex),
+  row_proportions = rows(prop.table(obs, 1)),
+  chi2 = unname(ct$statistic), df = unname(ct$parameter), p = ct$p.value,
+  cramers_v = sqrt(unname(ct$statistic) / (n * k))
+)
+assumptions <- list(list(
+  id = "expected_counts", label = "期望次數足夠", test = "expected counts",
+  statistic = NULL, p = NULL, threshold = 5L, max_proportion = 0.2,
+  min_expected = min(ex), cells_below_threshold = below, proportion_below_threshold = below / length(ex),
+  violated = (below / length(ex) > 0.2) || (min(ex) < 1)
+))
+''',
     "independent-t-test": r'''
 y <- V$outcome
 g <- V$group
 d <- df[complete.cases(df[, c(y, g)]), c(y, g), drop = FALSE]
-L <- unlist(PLAN$levels$group)
+L <- unlist(PLAN$levels[[g]])
 x1 <- as.numeric(d[[y]][d[[g]] == L[1]])
 x2 <- as.numeric(d[[y]][d[[g]] == L[2]])
 n1 <- length(x1)

@@ -266,15 +266,18 @@ class Workspace:
         return self.validate_plan(run.id)
 
     def _category_levels(self, dataset_id: str, spec: methods.MethodSpec, variables: dict) -> dict:
-        """Read categorical roles as text and fix their level order in the plan, so every engine
+        """Read categorical columns as text and fix their level order in the plan, so every engine
         compares the same strings in the same order (e.g. mean difference = first level − second)."""
-        columns = [variables[r] for r in spec.string_roles]
+        columns = methods.categorical_columns(spec, variables, self.get_dictionary(dataset_id))
         if not columns:
             return {"string_columns": [], "levels": {}}
         df = datamod.read_canonical_csv(self.dataset_dir(dataset_id) / "data.csv", text_columns=columns)
-        levels = {r: sorted(df[variables[r]].dropna().unique().tolist())
-                  for r in spec.string_roles if variables[r] in df.columns}
-        return {"string_columns": [c for c in columns if c in df.columns], "levels": levels}
+        columns = [c for c in columns if c in df.columns]
+        if spec.missing_strategy != "available-case":
+            # levels among analysed rows only, so no level has an empty margin
+            used = [c for c in methods.plan_columns(variables) if c in df.columns]
+            df = df.dropna(subset=used)
+        return {"string_columns": columns, "levels": {c: sorted(df[c].dropna().unique().tolist()) for c in columns}}
 
     def _gate_a(self, run: Run, confirmations: list[dict]) -> validation.Review:
         plan = run.plan

@@ -21,7 +21,7 @@ def test_gate_a_requires_independence_confirmation(ws):
     review = ws.method_review(run.id)
     assert check(review, "independence").verdict == "UNCERTAIN"
     assert check(review, "group_structure").verdict == "YES"
-    assert run.plan["levels"] == {"group": ["drug1", "drug2"]}
+    assert run.plan["levels"] == {"drug": ["drug1", "drug2"]}
 
 
 @pytest.mark.parametrize("engine", ["python", pytest.param("r", marks=requires_r)])
@@ -68,7 +68,7 @@ def test_numeric_group_codes_with_missing_values(ws, tmp_path):
     run, res = run_analysis(ws, "independent-t-test", {"outcome": "score", "group": "arm"}, "python",
                             dataset_id="coded")
 
-    assert run.plan["levels"] == {"group": ["1", "2"]}
+    assert run.plan["levels"] == {"arm": ["1", "2"]}
     assert res["statistics"]["n"] == 6
 
 

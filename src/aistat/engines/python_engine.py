@@ -71,10 +71,37 @@ with open(OUT, "w", encoding="utf-8") as f:
 '''
 
 METHOD_CODE = {
+    "chi-square": '''
+r, c = V["row"], V["column"]
+d = df[[r, c]].dropna()
+RL, CL = PLAN["levels"][r], PLAN["levels"][c]
+obs = np.array([[int(((d[r] == a) & (d[c] == b)).sum()) for b in CL] for a in RL])
+chi2, p, dof, exp = stats.chi2_contingency(obs, correction=False)
+n = int(obs.sum())
+k = min(obs.shape) - 1
+below = int((exp < 5).sum())
+statistics = {
+    "n": n,
+    "n_excluded": len(df) - n,
+    "row_levels": RL,
+    "column_levels": CL,
+    "observed": obs.tolist(),
+    "expected": exp.tolist(),
+    "row_proportions": (obs / obs.sum(axis=1, keepdims=True)).tolist(),
+    "chi2": chi2, "df": int(dof), "p": p,
+    "cramers_v": math.sqrt(chi2 / (n * k)),
+}
+assumptions = [{
+    "id": "expected_counts", "label": "期望次數足夠", "test": "expected counts",
+    "statistic": None, "p": None, "threshold": 5, "max_proportion": 0.2,
+    "min_expected": float(exp.min()), "cells_below_threshold": below, "proportion_below_threshold": below / exp.size,
+    "violated": bool(below / exp.size > 0.2 or exp.min() < 1),
+}]
+''',
     "independent-t-test": '''
 y, g = V["outcome"], V["group"]
 d = df[[y, g]].dropna()
-L1, L2 = PLAN["levels"]["group"]
+L1, L2 = PLAN["levels"][g]
 x1 = d.loc[d[g] == L1, y].to_numpy(dtype=float)
 x2 = d.loc[d[g] == L2, y].to_numpy(dtype=float)
 n1, n2 = len(x1), len(x2)

@@ -155,7 +155,7 @@ def _group_structure(plan, spec, df, complete) -> Check:
 
 
 # method id -> extra Gate A checks: fn(plan, spec, df, complete) -> Check
-EXTRA_CHECKS: dict[str, tuple] = {"independent-t-test": (_group_structure,)}
+EXTRA_CHECKS: dict[str, tuple] = {"independent-t-test": (_group_structure,), "chi-square": (_group_structure,)}
 
 
 def _missing_data(spec: MethodSpec, df: pd.DataFrame, complete: pd.DataFrame) -> Check:
