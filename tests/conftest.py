@@ -1,3 +1,4 @@
+import os
 import shutil
 from pathlib import Path
 
@@ -7,7 +8,12 @@ from aistat.workspace import Workspace
 
 GOLDEN = Path(__file__).parent / "golden_cases"
 
-requires_r = pytest.mark.skipif(shutil.which("Rscript") is None, reason="Rscript not installed")
+HAS_R = shutil.which("Rscript") is not None
+if os.environ.get("AISTAT_REQUIRE_R") and not HAS_R:
+    # CI sets this so the R/Python cross-checks can never be skipped silently.
+    raise RuntimeError("AISTAT_REQUIRE_R is set but Rscript is not on PATH")
+
+requires_r = pytest.mark.skipif(not HAS_R, reason="Rscript not installed")
 
 
 def make_workspace(tmp_path, *golden_files):
