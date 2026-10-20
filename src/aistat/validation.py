@@ -5,6 +5,7 @@ JEV is a process review, not a guarantee of statistical correctness.
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 
 import pandas as pd
@@ -38,6 +39,9 @@ class Review:
 
     @property
     def passed(self) -> bool:
+        """Gate A needs every check YES; Gate B only needs no NO (UNCERTAIN is reported, not blocking)."""
+        if self.gate == GATE_B:
+            return not self.by_verdict(NO)
         return all(c.verdict == YES for c in self.checks)
 
     def by_verdict(self, verdict: str) -> list[Check]:
@@ -174,3 +178,226 @@ def _apply_confirmations(checks: list[Check], confirmations: list[dict]) -> Revi
             c.reason = f"使用者已確認：{c.reason}"
             c.required_action = None
     return Review(GATE_A, checks)
+
+
+# ---- Gate B ------------------------------------------------------------------
+
+NUMBER = re.compile(r"(?<![A-Za-z0-9_.])-?(?:\d+\.\d+|\.\d+|\d+)(?![A-Za-z0-9_])")
+P_TOKEN = re.compile(r"(?<![A-Za-z])p\s*([=<>≤≥])\s*(-?\d*\.?\d+)")
+CODE_SPAN = re.compile(r"`[^`]*`")
+SENTENCE_END = re.compile(r"[。！？\n]|[.!?](?=\s|$)")
+CAUSAL = re.compile(
+    r"導致|造成|證明|證實|引起|歸因於|\bcaus(?:e|es|ed|ing)\b|\bprov(?:e|es|ed|ing)\b|\bled to\b"
+    r"|\bresult(?:s|ed)? in\b|\bdue to\b|\bbecause of\b",
+    re.IGNORECASE,
+)
+NONSIG = re.compile(r"未達(?:統計)?顯著|不顯著|無顯著|沒有顯著|not statistically significant|non-?significant"
+                    r"|not significant|did not reach (?:statistical )?significance", re.IGNORECASE)
+SIG = re.compile(r"達(?:到)?(?:統計)?顯著|statistically significant|\bsignificant(?:ly)?\b", re.IGNORECASE)
+LARGE_EFFECT = 3.0
+
+
+@dataclass
+class Provenance:
+    results_exists: bool
+    results_sha256: str | None
+    recorded_sha256: str | None
+    plan_data_sha256: str
+    executed_data_sha256: str | None
+    current_data_sha256: str
+
+
+def gate_b(plan: dict, spec: MethodSpec, results: dict | None, text: str, provenance: Provenance,
+           report) -> Review:
+    checks = [_engine_provenance(results, provenance)]
+    if results is None or checks[0].verdict == NO:
+        return Review(GATE_B, checks)
+    audited = _audited_text(text, plan)
+    s = results["statistics"]
+    checks += [
+        _values_traceable(audited, plan, results),
+        _p_value_format(audited),
+        _effect_size_ci(audited, report.effect(s)),
+        _causal_language(audited, spec),
+        _significance_consistency(audited, report.primary_p(s), plan["options"]["alpha"]),
+        _assumptions_met(results, spec),
+    ]
+    return Review(GATE_B, checks)
+
+
+def _engine_provenance(results: dict | None, p: Provenance) -> Check:
+    problems = []
+    if not p.results_exists or results is None:
+        problems.append("找不到 raw_outputs/results.json")
+    else:
+        if p.results_sha256 != p.recorded_sha256:
+            problems.append("results.json 的雜湊與執行時紀錄不符，原始輸出可能被修改")
+        engine = results.get("engine") or {}
+        if not engine.get("name") or not engine.get("version"):
+            problems.append("原始輸出缺少引擎名稱或版本")
+    if p.executed_data_sha256 != p.plan_data_sha256:
+        problems.append("執行時的資料雜湊與分析計畫不符")
+    if p.current_data_sha256 != p.plan_data_sha256:
+        problems.append("目前資料檔與分析計畫的雜湊不符")
+    evidence = [{"results_sha256": p.results_sha256, "data_sha256": p.current_data_sha256}]
+    if problems:
+        return Check(GATE_B, "engine_provenance", NO, "；".join(problems), evidence, "rerun_analysis")
+    return Check(GATE_B, "engine_provenance", YES,
+                 f"結果來自 {results['engine']['version']}，原始輸出與資料雜湊一致", evidence)
+
+
+def _audited_text(text: str, plan: dict) -> str:
+    """The part of a draft whose numbers must be traceable: code spans and the JEV appendix excluded,
+    and variable names / group labels removed so digits inside names are not read as statistics."""
+    from .reporting import JEV_HEADING
+
+    text = text.split(JEV_HEADING, 1)[0]
+    text = CODE_SPAN.sub(" ", text)
+    names = plan_columns(plan["variables"]) + [str(x) for x in (plan.get("group_levels") or [])] + [plan["dataset_id"]]
+    for name in sorted(set(names), key=len, reverse=True):
+        text = text.replace(name, " ")
+    return text
+
+
+def _numbers(obj) -> list[float]:
+    if isinstance(obj, bool) or obj is None:
+        return []
+    if isinstance(obj, (int, float)):
+        return [float(obj)]
+    if isinstance(obj, dict):
+        return [x for v in obj.values() for x in _numbers(v)]
+    if isinstance(obj, list):
+        return [x for v in obj for x in _numbers(v)]
+    return []
+
+
+def allowed_tokens(plan: dict, results: dict) -> set[str]:
+    from . import apa
+    from .reporting import CITATION_TOKENS
+
+    tokens = set(CITATION_TOKENS) | {".001", ".999"}
+    values = _numbers(results["statistics"]) + _numbers(results.get("assumptions", []))
+    values += _numbers(plan["options"])
+    for v in values:
+        for x in (v, abs(v), -v):
+            tokens.update(apa.num(x, d) for d in range(0, 5))
+            tokens.update(apa.bounded(x, d) for d in (2, 3))
+            tokens.add(apa.df(x))
+            tokens.add(apa.num(100 * x, 1))
+            tokens.add(apa.num(100 * x, 0))
+    return tokens
+
+
+def _values_traceable(text: str, plan: dict, results: dict) -> Check:
+    allowed = allowed_tokens(plan, results)
+    found = NUMBER.findall(text)
+    untraced = sorted({t for t in found if t not in allowed}, key=found.index)
+    if untraced:
+        return Check(GATE_B, "values_traceable", NO,
+                     f"草稿中的數值無法對應到引擎原始輸出：{', '.join(untraced)}",
+                     [{"untraced": untraced}], "regenerate_or_fix_draft")
+    return Check(GATE_B, "values_traceable", YES, f"草稿中 {len(found)} 個數值皆可追溯到原始輸出或計畫參數",
+                 [{"numbers_checked": len(found)}])
+
+
+def _p_value_format(text: str) -> Check:
+    problems = []
+    for op, value in P_TOKEN.findall(text):
+        if value.startswith("0."):
+            problems.append(f"p {op} {value}（APA 7 不寫前導零）")
+        try:
+            numeric = float(value)
+        except ValueError:
+            continue
+        if numeric == 0:
+            problems.append(f"p {op} {value}（p 不會等於 0，應寫 p < .001）")
+        elif op == "=" and numeric < 0.001:
+            problems.append(f"p {op} {value}（小於 .001 應寫 p < .001）")
+        elif numeric > 1:
+            problems.append(f"p {op} {value}（p 不可能大於 1）")
+    if problems:
+        return Check(GATE_B, "p_value_format", NO, "；".join(problems), problems, "fix_draft")
+    return Check(GATE_B, "p_value_format", YES, "p 值格式符合 APA 7")
+
+
+def _effect_size_ci(text: str, effect) -> Check:
+    from . import apa
+
+    evidence = [{"effect": effect.name, "value": effect.value, "ci": [effect.ci_lower, effect.ci_upper]}]
+    if effect.value is None:
+        return Check(GATE_B, "effect_size_ci", UNCERTAIN, f"引擎未產生 {effect.name}（可能變異為 0）", evidence,
+                     "review_manually")
+    if effect.ci_lower is not None and effect.ci_upper is not None:
+        if not effect.ci_lower < effect.ci_upper:
+            return Check(GATE_B, "effect_size_ci", NO, "信賴區間下限不小於上限", evidence, "rerun_analysis")
+        if effect.estimate is not None and not effect.ci_lower <= effect.estimate <= effect.ci_upper:
+            return Check(GATE_B, "effect_size_ci", NO, "點估計值不在信賴區間內", evidence, "rerun_analysis")
+    missing = [apa.num(v) for v in (effect.value, effect.ci_lower, effect.ci_upper)
+               if v is not None and apa.num(v) not in text and apa.bounded(v) not in text]
+    if missing:
+        return Check(GATE_B, "effect_size_ci", UNCERTAIN, f"草稿未報告效果量或信賴區間（缺 {', '.join(missing)}）",
+                     evidence, "fix_draft")
+    if abs(effect.value) > LARGE_EFFECT:
+        return Check(GATE_B, "effect_size_ci", UNCERTAIN,
+                     f"{effect.name} = {apa.num(effect.value)} 異常大，請確認資料是否有輸入錯誤或極端值", evidence,
+                     "review_manually")
+    return Check(GATE_B, "effect_size_ci", YES, f"{effect.name} 與信賴區間已報告且合理", evidence)
+
+
+def _causal_language(text: str, spec: MethodSpec) -> Check:
+    hits = sorted({m.group(0) for m in CAUSAL.finditer(text)})
+    if hits:
+        return Check(GATE_B, "causal_language", NO,
+                     f"草稿使用因果用語：{', '.join(hits)}。{spec.name_zh}只能支持差異或關聯的結論；"
+                     "若為隨機分派實驗，請在定稿時由研究者自行斟酌措辭",
+                     hits, "fix_draft")
+    return Check(GATE_B, "causal_language", YES, "未發現因果過度推論用語")
+
+
+def _significance_consistency(text: str, primary_p: float | None, alpha: float) -> Check:
+    """Each sentence claiming (non)significance must agree with the p values it cites,
+    or with the method's primary p value when it cites none."""
+    problems = []
+    for sentence in SENTENCE_END.split(text):
+        if NONSIG.search(sentence):
+            claim = False
+        elif SIG.search(sentence):
+            claim = True
+        else:
+            continue
+        cited = {_p_is_significant(op, v, alpha) for op, v in P_TOKEN.findall(sentence)} - {None}
+        if len(cited) > 1:
+            continue  # the sentence cites several tests with different outcomes
+        actual = cited.pop() if cited else (primary_p is not None and primary_p < alpha)
+        if claim != actual:
+            problems.append(sentence.strip())
+    if problems:
+        return Check(GATE_B, "significance_consistency", NO,
+                     "顯著性敘述與 p 值不一致：" + " / ".join(problems), problems, "fix_draft")
+    return Check(GATE_B, "significance_consistency", YES, "顯著性敘述與 p 值、α 一致")
+
+
+def _p_is_significant(op: str, value: str, alpha: float) -> bool | None:
+    try:
+        v = float(value)
+    except ValueError:
+        return None
+    if op == "=":
+        return v < alpha
+    if op in "<≤":
+        return True if v <= alpha else None
+    return False if v >= alpha else None
+
+
+def _assumptions_met(results: dict, spec: MethodSpec) -> Check:
+    alternatives = {a.id: a.alternative for a in spec.assumptions}
+    violated = [a for a in results.get("assumptions", []) if a.get("violated")]
+    untested = [a for a in results.get("assumptions", []) if a.get("violated") is None]
+    evidence = results.get("assumptions", [])
+    if violated:
+        detail = "；".join(f"{a['label']}未符合，可考慮 {alternatives.get(a['id'], '其他方法')}" for a in violated)
+        return Check(GATE_B, "assumptions_met", UNCERTAIN, detail, evidence, "review_manually")
+    if untested:
+        return Check(GATE_B, "assumptions_met", UNCERTAIN,
+                     "、".join(a["label"] for a in untested) + " 無法檢定（樣本數或變異不足）", evidence, "review_manually")
+    return Check(GATE_B, "assumptions_met", YES, "引擎檢查的統計假設均未發現違反", evidence)

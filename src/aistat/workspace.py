@@ -7,6 +7,7 @@ every entry point applies the same statistical rules.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -20,7 +21,7 @@ import time
 import pandas as pd
 
 from . import data as datamod
-from . import engines, methods, quality, validation
+from . import engines, methods, quality, reporting, validation
 from .audit import append_jsonl, now_iso
 from .errors import EngineFailed, InvalidState, NotFound, PlanError, WorkspaceNotFound
 from .runs import Run
@@ -29,6 +30,8 @@ META_DIR = ".aistat"
 WORKSPACE_FILE = "workspace.json"
 SCHEMA_VERSION = 1
 DEFAULT_TIMEOUT = 120.0
+REVIEWABLE = ("EXECUTED", "JEV_GATE_B", "REPORT_GENERATED", "EXPORTED")
+LANGS = ("zh", "en")
 
 
 @dataclass
@@ -363,11 +366,77 @@ class Workspace:
             raise InvalidState(f"{run.id} 尚未有分析結果（狀態 {run.status}）")
         return json.loads(path.read_text(encoding="utf-8"))
 
+    # ---- runs: JEV Gate B and reports ------------------------------------
+
+    def draft_report(self, run_id: str, lang: str = "zh") -> str:
+        run = self.get_run(run_id)
+        _check_lang(lang)
+        plan = run.plan
+        return reporting.build_draft(plan, self.results(run.id), run.manifest, methods.get_method(plan["method"]), lang)
+
+    def review(self, run_id: str, draft: str | None = None, lang: str = "zh") -> validation.Review:
+        """JEV Gate B on a report draft (the generated one unless `draft` text is given)."""
+        run = self.get_run(run_id)
+        run.require(*REVIEWABLE, action="審查結果", hint="請先執行分析（`aistat analyze`）。")
+        plan = run.plan
+        out = run.dir / "raw_outputs" / "results.json"
+        results = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else None
+        text = draft if draft is not None else self.draft_report(run.id, lang)
+        provenance = validation.Provenance(
+            results_exists=out.is_file(),
+            results_sha256=datamod.sha256_file(out) if out.is_file() else None,
+            recorded_sha256=run.manifest["outputs"].get("raw_outputs/results.json"),
+            plan_data_sha256=plan["data_sha256"],
+            executed_data_sha256=run.manifest.get("executed_data_sha256"),
+            current_data_sha256=datamod.sha256_file(self.dataset_dir(plan["dataset_id"]) / "data.csv"),
+        )
+        review = validation.gate_b(plan, methods.get_method(plan["method"]), results, text, provenance,
+                                   reporting.method_report(plan["method"]))
+        run.write_json("result_review.json", {
+            **review.to_dict(), "run_id": run.id, "evaluated_at": now_iso(),
+            "draft_source": "generated" if draft is None else "supplied",
+            "draft_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        })
+        run.log("jev_gate_b", passed=review.passed, verdicts={c.check_id: c.verdict for c in review.checks})
+        if run.status in ("EXECUTED", "JEV_GATE_B"):
+            run.set_status("JEV_GATE_B" if review.passed else "EXECUTED")
+        return review
+
+    def report(self, run_id: str, lang: str = "zh", mode: str = "research",
+               draft_path: Path | str | None = None) -> Path:
+        """Write statistical_report.md (and learning_notes.md in learning mode) after Gate B passes."""
+        run = self.get_run(run_id)
+        _check_lang(lang)
+        if mode not in ("research", "learning"):
+            raise PlanError(f"不支援的模式：{mode}（可用 research、learning）")
+        run.require("EXECUTED", "JEV_GATE_B", "REPORT_GENERATED", action="產生報告",
+                    hint="請先執行分析；已匯出的分析請建立新的 run。")
+        text = Path(draft_path).read_text(encoding="utf-8") if draft_path else self.draft_report(run.id, lang)
+        text = text.split(reporting.JEV_HEADING, 1)[0].rstrip() + "\n"
+        review = self.review(run.id, draft=text if draft_path else None, lang=lang)
+        run = self.get_run(run.id)  # review() advanced the state on disk
+        if not review.passed:
+            raise InvalidState("JEV Gate B 未通過，不產生報告：\n" + "\n".join(
+                f"[NO] {c.check_id}：{c.reason}" for c in review.by_verdict(validation.NO)))
+        path = run.write_text("statistical_report.md", text + "\n" + reporting.jev_appendix(review, lang))
+        if mode == "learning":
+            plan = run.plan
+            run.write_text("learning_notes.md", reporting.method_report(plan["method"]).learning(
+                plan, self.results(run.id), methods.get_method(plan["method"])))
+        run.log("report_generated", lang=lang, mode=mode, draft_source="supplied" if draft_path else "generated")
+        run.set_status("REPORT_GENERATED")
+        return path
+
     def _write_dictionary(self, dataset_id: str, dictionary: dict[str, datamod.Variable]) -> None:
         (self.dataset_dir(dataset_id) / "dictionary.json").write_text(
             json.dumps([v.to_dict() for v in dictionary.values()], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+
+def _check_lang(lang: str) -> None:
+    if lang not in LANGS:
+        raise PlanError(f"不支援的報告語言：{lang}（可用 {', '.join(LANGS)}）")
 
 
 def _relpath(target: Path, start: Path) -> str:

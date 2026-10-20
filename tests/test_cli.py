@@ -93,3 +93,32 @@ def test_plan_rejects_malformed_var_option(tmp_path):
 
     assert result.exit_code == 1
     assert "role=欄位" in result.output
+
+
+def _executed_run(tmp_path):
+    from conftest import GOLDEN
+
+    ws_dir = tmp_path / "proj"
+    invoke(ws_dir, "init")
+    invoke(ws_dir, "import", str(GOLDEN / "sleep_wide.csv"))
+    planned = invoke(ws_dir, "plan", "--method", "paired-t-test", "--var", "before=drug1", "--var", "after=drug2")
+    run_id = next(w for w in planned.output.split() if w.startswith("RUN_"))
+    invoke(ws_dir, "approve", run_id, "--confirm", "pairing_structure")
+    invoke(ws_dir, "analyze", run_id, "--engine", "python")
+    return ws_dir, run_id
+
+
+def test_review_and_report_via_cli(tmp_path):
+    ws_dir, run_id = _executed_run(tmp_path)
+    bad = tmp_path / "bad.md"
+    bad.write_text("t(9) = 9.99, p = .000\n", encoding="utf-8")
+
+    reviewed = invoke(ws_dir, "review", run_id)
+    refused = invoke(ws_dir, "report", run_id, "--draft", str(bad))
+    reported = invoke(ws_dir, "report", run_id, "--mode", "learning", "--lang", "zh")
+
+    assert reviewed.exit_code == 0, reviewed.output
+    assert "[YES] values_traceable" in reviewed.output
+    assert refused.exit_code == 1 and "values_traceable" in refused.output
+    assert reported.exit_code == 0, reported.output
+    assert "statistical_report.md" in reported.output and "learning_notes.md" in reported.output

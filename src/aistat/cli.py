@@ -228,5 +228,41 @@ def status(run_id: str) -> None:
         typer.echo(f"  {h['ts']}  {h['state']}")
 
 
+@app.command()
+@handles_errors
+def review(
+    run_id: str,
+    draft: Optional[Path] = typer.Option(None, help="審查自行（或 AI）改寫的草稿，而非系統產生的草稿"),
+    lang: str = typer.Option("zh", help="zh | en"),
+) -> None:
+    """JEV Gate B：報告輸出前審查。"""
+    ws = _ws()
+    text = draft.read_text(encoding="utf-8") if draft else None
+    result = ws.review(run_id, draft=text, lang=lang)
+    typer.echo("JEV Gate B（報告輸出前審查）：")
+    _print_review(result)
+    if result.passed:
+        typer.echo(f"\n通過。下一步：aistat report {run_id}")
+    else:
+        typer.echo("\n未通過：請修正 NO 項目。")
+        raise typer.Exit(1)
+
+
+@app.command()
+@handles_errors
+def report(
+    run_id: str,
+    lang: str = typer.Option("zh", help="zh | en"),
+    mode: str = typer.Option("research", help="research | learning（另產生 learning_notes.md）"),
+    draft: Optional[Path] = typer.Option(None, help="以改寫過的草稿作為報告（仍須通過 Gate B）"),
+) -> None:
+    """通過 Gate B 後產生 APA 7 統計結果草稿。"""
+    ws = _ws()
+    path = ws.report(run_id, lang=lang, mode=mode, draft_path=draft)
+    typer.echo(f"報告已寫入 {path}")
+    if mode == "learning":
+        typer.echo(f"學習筆記已寫入 {path.parent / 'learning_notes.md'}")
+
+
 def main() -> None:
     app()
