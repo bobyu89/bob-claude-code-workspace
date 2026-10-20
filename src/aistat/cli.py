@@ -258,7 +258,8 @@ def report(
 ) -> None:
     """通過 Gate B 後產生 APA 7 統計結果草稿。"""
     ws = _ws()
-    path = ws.report(run_id, lang=lang, mode=mode, draft_path=draft)
+    text = draft.read_text(encoding="utf-8") if draft else None
+    path = ws.report(run_id, lang=lang, mode=mode, draft=text)
     typer.echo(f"報告已寫入 {path}")
     if mode == "learning":
         typer.echo(f"學習筆記已寫入 {path.parent / 'learning_notes.md'}")

@@ -427,7 +427,7 @@ class Workspace:
         return review
 
     def report(self, run_id: str, lang: str = "zh", mode: str = "research",
-               draft_path: Path | str | None = None) -> Path:
+               draft: str | None = None) -> Path:
         """Write statistical_report.md (and learning_notes.md in learning mode) after Gate B passes."""
         run = self.get_run(run_id)
         _check_lang(lang)
@@ -435,9 +435,9 @@ class Workspace:
             raise PlanError(f"不支援的模式：{mode}（可用 research、learning）")
         run.require("EXECUTED", "JEV_GATE_B", "REPORT_GENERATED", action="產生報告",
                     hint="請先執行分析；已匯出的分析請建立新的 run。")
-        text = Path(draft_path).read_text(encoding="utf-8") if draft_path else self.draft_report(run.id, lang)
+        text = draft if draft is not None else self.draft_report(run.id, lang)
         text = text.split(reporting.JEV_HEADING, 1)[0].rstrip() + "\n"
-        review = self.review(run.id, draft=text if draft_path else None, lang=lang)
+        review = self.review(run.id, draft=text if draft is not None else None, lang=lang)
         run = self.get_run(run.id)  # review() advanced the state on disk
         if not review.passed:
             raise InvalidState("JEV Gate B 未通過，不產生報告：\n" + "\n".join(
@@ -447,7 +447,7 @@ class Workspace:
             plan = run.plan
             run.write_text("learning_notes.md", reporting.method_report(plan["method"]).learning(
                 plan, self.results(run.id), methods.get_method(plan["method"])))
-        run.log("report_generated", lang=lang, mode=mode, draft_source="supplied" if draft_path else "generated")
+        run.log("report_generated", lang=lang, mode=mode, draft_source="supplied" if draft is not None else "generated")
         run.set_status("REPORT_GENERATED")
         return path
 

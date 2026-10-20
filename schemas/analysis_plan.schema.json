@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "analysis_plan.schema.json",
+  "title": "aistat analysis plan (analysis_plan.json)",
+  "type": "object",
+  "required": [
+    "run_id",
+    "dataset_id",
+    "dataset_sha256",
+    "data_sha256",
+    "method",
+    "variables",
+    "options",
+    "missing_strategy",
+    "assumptions",
+    "string_columns",
+    "levels"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^RUN_[0-9]{8}_[0-9]{3}$"
+    },
+    "dataset_id": {
+      "type": "string"
+    },
+    "dataset_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "data_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "method": {
+      "enum": [
+        "descriptives",
+        "paired-t-test",
+        "independent-t-test",
+        "chi-square",
+        "correlation",
+        "linear-regression"
+      ]
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          }
+        ]
+      }
+    },
+    "options": {
+      "type": "object",
+      "required": [
+        "alpha",
+        "conf_level"
+      ],
+      "properties": {
+        "alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "conf_level": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "missing_strategy": {
+      "enum": [
+        "complete-pairs",
+        "listwise",
+        "available-case"
+      ]
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "string_columns": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

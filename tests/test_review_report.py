@@ -117,7 +117,7 @@ def test_report_refuses_draft_that_fails_gate_b(ws, run, tmp_path):
     edited.write_text(draft(ws, run).replace("4.06", "4.60"), encoding="utf-8")
 
     with pytest.raises(InvalidState, match="values_traceable"):
-        ws.report(run.id, draft_path=edited)
+        ws.report(run.id, draft=edited.read_text(encoding="utf-8"))
     assert not (run.dir / "statistical_report.md").exists()
 
 
@@ -125,7 +125,7 @@ def test_report_accepts_user_edited_draft_that_passes(ws, run, tmp_path):
     edited = tmp_path / "edited.md"
     edited.write_text(draft(ws, run) + "\n本研究樣本為一般受試者。\n", encoding="utf-8")
 
-    text = ws.report(run.id, draft_path=edited).read_text(encoding="utf-8")
+    text = ws.report(run.id, draft=edited.read_text(encoding="utf-8")).read_text(encoding="utf-8")
 
     assert "本研究樣本為一般受試者" in text
 

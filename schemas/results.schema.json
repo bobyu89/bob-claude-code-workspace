@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "results.schema.json",
+  "title": "Engine raw output (raw_outputs/results.json)",
+  "type": "object",
+  "required": [
+    "engine",
+    "method",
+    "run_id",
+    "n_input_rows",
+    "statistics",
+    "assumptions",
+    "warnings"
+  ],
+  "properties": {
+    "engine": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "r",
+            "python"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "method": {
+      "enum": [
+        "descriptives",
+        "paired-t-test",
+        "independent-t-test",
+        "chi-square",
+        "correlation",
+        "linear-regression"
+      ]
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "n_input_rows": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "statistics": {
+      "type": "object"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "warnings": {
+      "type": "array"
+    }
+  },
+  "$defs": {
+    "assumption": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "test",
+        "violated"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "test": {
+          "type": "string"
+        },
+        "statistic": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "violated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "informational": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
