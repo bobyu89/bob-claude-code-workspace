@@ -257,13 +257,24 @@ class Workspace:
             "options": options,
             "missing_strategy": spec.missing_strategy,
             "assumptions": [a.id for a in spec.assumptions],
-            "string_columns": [],
+            **self._category_levels(ds.id, spec, variables),
         }
         run.write_json("analysis_plan.json", plan)
         run.manifest["method"] = spec.id
         run.set_status("PLAN_DRAFTED", method=spec.id)
         self._audit("plan_created", run_id=run.id, dataset_id=ds.id, method=spec.id)
         return self.validate_plan(run.id)
+
+    def _category_levels(self, dataset_id: str, spec: methods.MethodSpec, variables: dict) -> dict:
+        """Read categorical roles as text and fix their level order in the plan, so every engine
+        compares the same strings in the same order (e.g. mean difference = first level − second)."""
+        columns = [variables[r] for r in spec.string_roles]
+        if not columns:
+            return {"string_columns": [], "levels": {}}
+        df = datamod.read_canonical_csv(self.dataset_dir(dataset_id) / "data.csv", text_columns=columns)
+        levels = {r: sorted(df[variables[r]].dropna().unique().tolist())
+                  for r in spec.string_roles if variables[r] in df.columns}
+        return {"string_columns": [c for c in columns if c in df.columns], "levels": levels}
 
     def _gate_a(self, run: Run, confirmations: list[dict]) -> validation.Review:
         plan = run.plan

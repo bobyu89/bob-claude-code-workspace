@@ -20,6 +20,13 @@ DISCLAIMER = {
 }
 
 
+ALTERNATIVES_EN = {
+    "normality_of_differences": "consider the Wilcoxon signed-rank test",
+    "normality_by_group": "consider the Mann-Whitney U test",
+    "homogeneity_of_variance": "the Welch test reported above does not assume equal variances",
+}
+
+
 @dataclass
 class Effect:
     name: str
@@ -151,7 +158,111 @@ class PairedReport:
 """
 
 
-REPORTS = {"paired-t-test": PairedReport()}
+class IndependentReport:
+    def headline(self, plan, s) -> str:
+        w = s["welch"]
+        return (f"Welch t({apa.df(w['df'])}) = {apa.num(w['t'])}, p {apa.p_value(w['p'])}, "
+                f"M_diff = {apa.num(s['mean_diff'])}, d = {apa.num(s['cohens_d'])}")
+
+    def primary_p(self, s) -> float | None:
+        return s["welch"]["p"]
+
+    def effect(self, s) -> Effect:
+        w = s["welch"]
+        return Effect("Cohen's d", s["cohens_d"], s["mean_diff"], w["ci_lower"], w["ci_upper"])
+
+    def paragraph(self, plan, s, lang) -> str:
+        y, g = plan["variables"]["outcome"], plan["variables"]["group"]
+        o, w = plan["options"], s["welch"]
+        g1, g2 = s["groups"]
+        cl = apa.num(100 * o["conf_level"], 0)
+        desc = [f"{x['level']}（n = {x['n']}, M = {apa.num(x['mean'])}, SD = {apa.num(x['sd'])}）" for x in (g1, g2)]
+        stats = (f"{cl}% CI [{apa.num(w['ci_lower'])}, {apa.num(w['ci_upper'])}]，"
+                 f"t({apa.df(w['df'])}) = {apa.num(w['t'])}, p {apa.p_value(w['p'])}, "
+                 f"Cohen's d = {apa.num(s['cohens_d'])}")
+        excluded = s["n_excluded"]
+        d_label = s["cohens_d"]
+        if lang == "zh":
+            dropped = f"，排除 {excluded} 筆缺失" if excluded else ""
+            return (f"以獨立樣本 t 檢定（Welch 校正，不假設兩組變異數相等）比較 {g} 兩組的 {y}（n = {s['n']}{dropped}）。"
+                    f"{desc[0]}與{desc[1]}的平均差（{g1['level']} − {g2['level']}）為 {apa.num(s['mean_diff'])}，{stats}。"
+                    + significance_sentence(w["p"], o["alpha"], "zh")
+                    + (f"{cohen_d_label(d_label, 'zh')}。" if d_label is not None else ""))
+        desc_en = [f"{x['level']} (n = {x['n']}, M = {apa.num(x['mean'])}, SD = {apa.num(x['sd'])})" for x in (g1, g2)]
+        dropped = f"; {excluded} cases with missing values excluded" if excluded else ""
+        return (f"An independent-samples t test with Welch's correction compared {y} between the {g} groups "
+                f"(n = {s['n']}{dropped}). The mean difference between {desc_en[0]} and {desc_en[1]} "
+                f"({g1['level']} minus {g2['level']}) was {apa.num(s['mean_diff'])}, {stats.replace('，', ', ')}. "
+                + significance_sentence(w["p"], o["alpha"], "en")
+                + (f" This is {cohen_d_label(d_label, 'en')}." if d_label is not None else ""))
+
+    def limitations(self, lang) -> str:
+        if lang == "zh":
+            return ("若組別不是隨機分派，兩組在結果變項上的差異可能來自其他干擾變項，"
+                    "只能描述為組間差異，不應解讀為分組本身的因果效果。")
+        return ("Unless participants were randomly assigned, group differences may reflect confounding variables; "
+                "the result describes a difference between groups, not the causal effect of group membership.")
+
+    def learning(self, plan, results, spec: MethodSpec) -> str:
+        s, a = results["statistics"], results["assumptions"]
+        y, g = plan["variables"]["outcome"], plan["variables"]["group"]
+        g1, g2 = s["groups"]
+        w, st = s["welch"], s["student"]
+        alpha = apa.bounded(plan["options"]["alpha"], 2)
+        cl = apa.num(100 * plan["options"]["conf_level"], 0)
+        sig = apa.significant(w["p"], plan["options"]["alpha"])
+        normal = [x for x in a if x["id"] == "normality_by_group"]
+        lev = next(x for x in a if x["id"] == "homogeneity_of_variance")
+        normal_lines = "\n".join(
+            f"- `{x['group']}` 組：" + ("無法檢定（樣本數或變異不足）" if x.get("violated") is None else
+                                       f"W = {apa.bounded(x['statistic'])}, p {apa.p_value(x['p'])}，"
+                                       + ("偏離常態" if x["violated"] else "沒有證據顯示偏離常態"))
+            for x in normal)
+        return f"""# 學習筆記：{spec.name_zh}
+
+## 1. 目前的研究問題是什麼？
+
+`{g}` 的兩組（`{g1['level']}`、`{g2['level']}`）在 `{y}` 的平均數是否不同？
+虛無假設 H0：兩組母體平均數相等；對立假設 H1：兩組平均數不相等（雙尾）。
+
+## 2. 為什麼選擇獨立樣本 t 檢定？
+
+- 結果變項 `{y}` 是連續（scale）尺度，分組變項 `{g}` 恰好兩組。
+- 兩組是不同的人（你已在 Gate A 確認 independence），彼此沒有配對。
+- 本平台預設報告 **Welch t 檢定**：不需要假設兩組變異數相等，兩組人數不同時也穩健。
+
+## 3. 為什麼不選其他方法？
+
+- **配對樣本 t 檢定**：用於同一批人測兩次；你的兩組是不同的人。
+- **Student t 檢定（假設變異數相等）**：結果也一併算出（t({apa.df(st['df'])}) = {apa.num(st['t'])}, p {apa.p_value(st['p'])}），
+  但當變異數或人數不等時可能偏誤，因此以 Welch 為主。
+- **Mann-Whitney U test**：結果明顯偏態或樣本很小時的無母數替代。
+- **單因子 ANOVA**：三組以上時使用；兩組時與 t 檢定等價。
+
+## 4. 如何理解統計假設？
+
+各組常態性（Shapiro-Wilk）：
+{normal_lines}
+
+變異數同質性（Brown-Forsythe Levene）：F = {apa.num(lev['statistic'])}, p {apa.p_value(lev['p'])}。
+Welch 檢定不依賴這個假設，所以它只作參考；觀察值互相獨立則是無法用檢定確認、必須由研究設計保證的前提。
+
+## 5. 如何解讀效果量與信賴區間？
+
+- 平均差（`{g1['level']}` − `{g2['level']}`）= {apa.num(s['mean_diff'])}，{cl}% CI [{apa.num(w['ci_lower'])}, {apa.num(w['ci_upper'])}]。
+  區間{'不包含' if sig else '包含'} 0，與檢定{'達' if sig else '未達'}顯著一致。
+- Cohen's d = {apa.num(s['cohens_d'])}：兩組平均差相當於合併標準差的幾倍，{cohen_d_label(s['cohens_d'], 'zh')}。
+- 未達顯著不代表「兩組一樣」：信賴區間若很寬，代表樣本可能不足以偵測差異。
+
+## 6. 這個結果可以支持什麼結論？
+
+- 可以說：`{g1['level']}` 與 `{g2['level']}` 在 `{y}` 的平均差為 {apa.num(s['mean_diff'])}，差異{'達' if sig else '未達'}統計顯著（p {apa.p_value(w['p'])}，α = {alpha}）。
+- 只有在隨機分派的實驗中，才能進一步討論組別的因果作用；觀察性分組只能描述差異。
+- 請同時判斷差異大小在臨床或教育情境中是否有實質意義。
+"""
+
+
+REPORTS = {"paired-t-test": PairedReport(), "independent-t-test": IndependentReport()}
 
 
 def method_report(method: str):
@@ -167,17 +278,18 @@ def assumption_lines(results: dict, spec: MethodSpec, lang: str) -> list[str]:
     alternatives = {a.id: a.alternative for a in spec.assumptions}
     lines = []
     for a in results.get("assumptions", []):
-        label = f"{a['label']}（{a['test']}）" if lang == "zh" else f"{a['id']} ({a['test']})"
+        group = f" [{a['group']}]" if a.get("group") else ""
+        label = f"{a['label']}（{a['test']}）" if lang == "zh" else f"{a['id']}{group} ({a['test']})"
         stat = ""
         if a.get("statistic") is not None:
-            symbol = {"Shapiro-Wilk": "W"}.get(a["test"], "statistic")
+            symbol = {"Shapiro-Wilk": "W", "Brown-Forsythe Levene": "F"}.get(a["test"], "statistic")
             value = apa.bounded(a["statistic"]) if symbol == "W" else apa.num(a["statistic"])
             stat = f"{symbol} = {value}, p {apa.p_value(a['p'])}"
         if a.get("violated") is None:
             verdict = "無法檢定" if lang == "zh" else "not testable"
         elif a["violated"]:
-            verdict = (f"未符合；可考慮 {alternatives.get(a['id'], '其他方法')}" if lang == "zh"
-                       else f"not met; consider {alternatives.get(a['id'], 'an alternative method')}")
+            verdict = (f"未符合；{alternatives.get(a['id'], '請考慮其他方法')}" if lang == "zh"
+                       else f"not met; {ALTERNATIVES_EN.get(a['id'], 'consider an alternative method')}")
         else:
             verdict = "符合" if lang == "zh" else "met"
         sep = "：" if lang == "zh" else ": "

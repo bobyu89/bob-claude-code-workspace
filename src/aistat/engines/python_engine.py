@@ -71,6 +71,43 @@ with open(OUT, "w", encoding="utf-8") as f:
 '''
 
 METHOD_CODE = {
+    "independent-t-test": '''
+y, g = V["outcome"], V["group"]
+d = df[[y, g]].dropna()
+L1, L2 = PLAN["levels"]["group"]
+x1 = d.loc[d[g] == L1, y].to_numpy(dtype=float)
+x2 = d.loc[d[g] == L2, y].to_numpy(dtype=float)
+n1, n2 = len(x1), len(x2)
+
+
+def ttest(equal_var):
+    r = stats.ttest_ind(x1, x2, equal_var=equal_var)
+    ci = r.confidence_interval(confidence_level=O["conf_level"])
+    return {"t": r.statistic, "df": r.df, "p": r.pvalue, "ci_lower": ci.low, "ci_upper": ci.high}
+
+
+pooled_sd = math.sqrt(((n1 - 1) * np.var(x1, ddof=1) + (n2 - 1) * np.var(x2, ddof=1)) / (n1 + n2 - 2))
+statistics = {
+    "n": n1 + n2,
+    "n_excluded": len(df) - (n1 + n2),
+    "groups": [{"level": L1, "n": n1, "mean": x1.mean(), "sd": np.std(x1, ddof=1)},
+               {"level": L2, "n": n2, "mean": x2.mean(), "sd": np.std(x2, ddof=1)}],
+    "mean_diff": x1.mean() - x2.mean(),
+    "welch": ttest(False),
+    "student": ttest(True),
+    "pooled_sd": pooled_sd,
+    "cohens_d": (x1.mean() - x2.mean()) / pooled_sd if pooled_sd > 0 else None,
+    "conf_level": O["conf_level"],
+}
+lev = stats.levene(x1, x2, center="median")
+assumptions = [
+    {**shapiro(x1, "normality_by_group", f"{L1} 組常態性"), "group": L1},
+    {**shapiro(x2, "normality_by_group", f"{L2} 組常態性"), "group": L2},
+    {"id": "homogeneity_of_variance", "label": "變異數同質性", "test": "Brown-Forsythe Levene",
+     "statistic": lev.statistic, "p": lev.pvalue, "df1": 1, "df2": n1 + n2 - 2,
+     "violated": bool(lev.pvalue < O["alpha"]), "informational": True},
+]
+''',
     "paired-t-test": '''
 d = df[[V["before"], V["after"]]].dropna()
 before = d[V["before"]].to_numpy(dtype=float)

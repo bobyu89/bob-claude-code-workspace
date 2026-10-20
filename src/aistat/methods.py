@@ -38,7 +38,8 @@ class MethodSpec:
     min_n: int
     assumptions: tuple[Assumption, ...] = ()
     design_checks: tuple[str, ...] = ()
-    options: dict = field(default_factory=dict)  # option -> allowed values (tuple) or None for numeric
+    options: dict = field(default_factory=dict)  # option -> allowed values (tuple)
+    string_roles: tuple[str, ...] = ()  # roles read as text; their levels are fixed in the plan
 
     def role(self, name: str) -> Role:
         return next(r for r in self.roles if r.name == name)
@@ -68,11 +69,35 @@ _register(
             Assumption(
                 "normality_of_differences",
                 "前後測差值近似常態分布",
-                "Wilcoxon signed-rank test（樣本數大時 t 檢定對常態性較穩健）",
+                "可考慮 Wilcoxon signed-rank test（樣本數大時 t 檢定對常態性較穩健）",
             ),
         ),
         design_checks=("pairing_structure",),
         options={"alternative": ("two-sided",)},
+    )
+)
+
+
+_register(
+    MethodSpec(
+        id="independent-t-test",
+        name_zh="獨立樣本 t 檢定",
+        name_en="independent-samples t test",
+        roles=(
+            Role("outcome", "結果變項", ("scale",), numeric=True),
+            Role("group", "分組變項", ("nominal", "ordinal")),
+        ),
+        missing_strategy="listwise",
+        min_n=4,
+        assumptions=(
+            Assumption("normality_by_group", "各組結果變項近似常態分布",
+                       "可考慮 Mann-Whitney U test（各組樣本數大時 t 檢定較穩健）"),
+            Assumption("homogeneity_of_variance", "兩組變異數相等",
+                       "報告以 Welch t 檢定為主，不需假設變異數相等"),
+        ),
+        design_checks=("independence",),
+        options={"alternative": ("two-sided",)},
+        string_roles=("group",),
     )
 )
 

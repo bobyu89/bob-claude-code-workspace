@@ -78,6 +78,45 @@ writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
 '''
 
 METHOD_CODE = {
+    "independent-t-test": r'''
+y <- V$outcome
+g <- V$group
+d <- df[complete.cases(df[, c(y, g)]), c(y, g), drop = FALSE]
+L <- unlist(PLAN$levels$group)
+x1 <- as.numeric(d[[y]][d[[g]] == L[1]])
+x2 <- as.numeric(d[[y]][d[[g]] == L[2]])
+n1 <- length(x1)
+n2 <- length(x2)
+ttest <- function(equal_var) {
+  r <- t.test(x1, x2, var.equal = equal_var, conf.level = O$conf_level)
+  list(t = unname(r$statistic), df = unname(r$parameter), p = r$p.value,
+       ci_lower = r$conf.int[1], ci_upper = r$conf.int[2])
+}
+pooled_sd <- sqrt(((n1 - 1) * var(x1) + (n2 - 1) * var(x2)) / (n1 + n2 - 2))
+statistics <- list(
+  n = n1 + n2,
+  n_excluded = nrow(df) - (n1 + n2),
+  groups = list(list(level = L[1], n = n1, mean = mean(x1), sd = sd(x1)),
+                list(level = L[2], n = n2, mean = mean(x2), sd = sd(x2))),
+  mean_diff = mean(x1) - mean(x2),
+  welch = ttest(FALSE),
+  student = ttest(TRUE),
+  pooled_sd = pooled_sd,
+  cohens_d = if (pooled_sd > 0) (mean(x1) - mean(x2)) / pooled_sd else NULL,
+  conf_level = O$conf_level
+)
+# Brown-Forsythe variant of Levene's test: one-way ANOVA on absolute deviations from group medians.
+z <- c(abs(x1 - median(x1)), abs(x2 - median(x2)))
+grp <- factor(c(rep(1, n1), rep(2, n2)))
+lev <- anova(lm(z ~ grp))
+assumptions <- list(
+  c(shapiro(x1, "normality_by_group", paste0(L[1], " 組常態性")), list(group = L[1])),
+  c(shapiro(x2, "normality_by_group", paste0(L[2], " 組常態性")), list(group = L[2])),
+  list(id = "homogeneity_of_variance", label = "變異數同質性", test = "Brown-Forsythe Levene",
+       statistic = lev[["F value"]][1], p = lev[["Pr(>F)"]][1], df1 = 1L, df2 = n1 + n2 - 2L,
+       violated = lev[["Pr(>F)"]][1] < O$alpha, informational = TRUE)
+)
+''',
     "paired-t-test": r'''
 d <- df[complete.cases(df[, c(V$before, V$after)]), c(V$before, V$after), drop = FALSE]
 before <- as.numeric(d[[V$before]])

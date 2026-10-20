@@ -87,12 +87,21 @@ def _check_header(header: list[str]) -> None:
 
 
 def write_canonical_csv(df: pd.DataFrame, path: Path) -> None:
-    """UTF-8, empty cell = missing. Both engines read this file."""
-    df.to_csv(path, index=False, encoding="utf-8", lineterminator="\n")
+    """UTF-8, empty cell = missing. Both engines read this file.
+
+    Whole-number float columns (integers with gaps) are written as integers, so a
+    group code reads as "1" rather than "1.0" in every engine."""
+    out = df.copy()
+    for name in out.columns:
+        s = out[name]
+        if pd.api.types.is_float_dtype(s) and s.notna().any() and bool((s.dropna() == s.dropna().round()).all()):
+            out[name] = s.astype("Int64")
+    out.to_csv(path, index=False, encoding="utf-8", lineterminator="\n")
 
 
-def read_canonical_csv(path: Path) -> pd.DataFrame:
-    return pd.read_csv(path, encoding="utf-8")
+def read_canonical_csv(path: Path, text_columns: list[str] = ()) -> pd.DataFrame:
+    header = pd.read_csv(path, encoding="utf-8", nrows=0).columns
+    return pd.read_csv(path, encoding="utf-8", dtype={c: str for c in text_columns if c in header})
 
 
 def infer_dictionary(df: pd.DataFrame) -> dict[str, Variable]:
@@ -106,7 +115,8 @@ def _infer_variable(name: str, s: pd.Series) -> Variable:
     if pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s):
         uniques = set(values.unique().tolist())
         is_integer = bool(len(values)) and bool((values == values.round()).all())
-        if uniques and uniques <= {0, 1}:
+        if uniques and (uniques <= {0, 1} or (is_integer and n_unique == 2)):
+            # dichotomous codes such as 0/1 or 1/2
             return Variable(type="numeric", level="nominal", ambiguous=True, **common)
         if is_integer and 3 <= n_unique <= 7 and values.min() >= 0 and values.max() <= 10:
             # Likert-like codes: could be an ordinal item or a short scale.

@@ -134,8 +134,28 @@ def _independence(plan, spec, complete) -> Check:
 
 DESIGN_CHECKS = {"pairing_structure": _pairing_structure, "independence": _independence}
 
+def _group_structure(plan, spec, df, complete) -> Check:
+    """Every categorical role needs at least two levels; a two-group comparison needs exactly two,
+    each with at least two observations."""
+    problems, evidence = [], []
+    for role in spec.string_roles:
+        col = plan["variables"][role]
+        counts = complete[col].astype(str).value_counts().sort_index()
+        evidence.append({"role": role, "variable": col, "counts": {str(k): int(v) for k, v in counts.items()}})
+        k = len(counts)
+        if spec.id == "independent-t-test" and k != 2:
+            problems.append(f"{col} 有 {k} 組（{'、'.join(map(str, counts.index))}），{spec.name_zh}需要恰好兩組")
+        elif k < 2:
+            problems.append(f"{col} 只有 {k} 個類別，無法比較")
+        elif spec.id == "independent-t-test" and counts.min() < 2:
+            problems.append(f"{col} 有組別少於 2 筆有效資料")
+    if problems:
+        return Check(GATE_A, "group_structure", NO, "；".join(problems), evidence, "fix_plan")
+    return Check(GATE_A, "group_structure", YES, "分組結構符合方法要求", evidence)
+
+
 # method id -> extra Gate A checks: fn(plan, spec, df, complete) -> Check
-EXTRA_CHECKS: dict[str, tuple] = {}
+EXTRA_CHECKS: dict[str, tuple] = {"independent-t-test": (_group_structure,)}
 
 
 def _missing_data(spec: MethodSpec, df: pd.DataFrame, complete: pd.DataFrame) -> Check:
@@ -253,7 +273,8 @@ def _audited_text(text: str, plan: dict) -> str:
 
     text = text.split(JEV_HEADING, 1)[0]
     text = CODE_SPAN.sub(" ", text)
-    names = plan_columns(plan["variables"]) + [str(x) for x in (plan.get("group_levels") or [])] + [plan["dataset_id"]]
+    levels = [str(x) for values in (plan.get("levels") or {}).values() for x in values]
+    names = plan_columns(plan["variables"]) + levels + [plan["dataset_id"]]
     for name in sorted(set(names), key=len, reverse=True):
         text = text.replace(name, " ")
     return text
@@ -391,11 +412,12 @@ def _p_is_significant(op: str, value: str, alpha: float) -> bool | None:
 
 def _assumptions_met(results: dict, spec: MethodSpec) -> Check:
     alternatives = {a.id: a.alternative for a in spec.assumptions}
-    violated = [a for a in results.get("assumptions", []) if a.get("violated")]
-    untested = [a for a in results.get("assumptions", []) if a.get("violated") is None]
+    relevant = [a for a in results.get("assumptions", []) if not a.get("informational")]
+    violated = [a for a in relevant if a.get("violated")]
+    untested = [a for a in relevant if a.get("violated") is None]
     evidence = results.get("assumptions", [])
     if violated:
-        detail = "；".join(f"{a['label']}未符合，可考慮 {alternatives.get(a['id'], '其他方法')}" for a in violated)
+        detail = "；".join(f"{a['label']}未符合，{alternatives.get(a['id'], '請考慮其他方法')}" for a in violated)
         return Check(GATE_B, "assumptions_met", UNCERTAIN, detail, evidence, "review_manually")
     if untested:
         return Check(GATE_B, "assumptions_met", UNCERTAIN,
