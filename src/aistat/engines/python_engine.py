@@ -71,6 +71,51 @@ with open(OUT, "w", encoding="utf-8") as f:
 '''
 
 METHOD_CODE = {
+    "linear-regression": '''
+import statsmodels
+import statsmodels.api as sm
+
+ENGINE_VERSION.append(f"statsmodels {statsmodels.__version__}")
+yv, X = V["outcome"], V["predictors"]
+d = df[[yv, *X]].dropna()
+y = d[yv].to_numpy(dtype=float)
+Xm = d[X].to_numpy(dtype=float)
+design = sm.add_constant(Xm, has_constant="add")
+if np.linalg.matrix_rank(design) < design.shape[1]:
+    sys.exit("預測變項完全共線（perfect collinearity），無法估計迴歸係數；請移除重複或可互相換算的預測變項。")
+fit = sm.OLS(y, design).fit()
+ci = fit.conf_int(alpha=1 - O["conf_level"])
+sd_y = np.std(y, ddof=1)
+sd_x = np.std(Xm, axis=0, ddof=1)
+coefficients = [
+    {"term": term, "b": fit.params[i], "se": fit.bse[i], "t": fit.tvalues[i], "p": fit.pvalues[i],
+     "ci_lower": ci[i, 0], "ci_upper": ci[i, 1], "beta": None if i == 0 else fit.params[i] * sd_x[i - 1] / sd_y}
+    for i, term in enumerate(["(Intercept)", *X])
+]
+statistics = {
+    "n": len(y), "n_excluded": len(df) - len(y), "k": len(X),
+    "coefficients": coefficients,
+    "r_squared": fit.rsquared, "adj_r_squared": fit.rsquared_adj,
+    "f": fit.fvalue, "df1": int(fit.df_model), "df2": int(fit.df_resid), "f_p": fit.f_pvalue,
+    "residual_se": math.sqrt(fit.mse_resid), "conf_level": O["conf_level"],
+}
+# Breusch-Pagan, Koenker's studentized form: n × R² of squared residuals on the predictors.
+aux = sm.OLS(fit.resid ** 2, design).fit()
+bp = len(y) * aux.rsquared
+assumptions = [
+    shapiro(fit.resid, "normality_of_residuals", "殘差常態性"),
+    {"id": "homoscedasticity", "label": "殘差變異數同質", "test": "Breusch-Pagan (Koenker)",
+     "statistic": bp, "df": len(X), "p": stats.chi2.sf(bp, len(X)), "violated": bool(stats.chi2.sf(bp, len(X)) < O["alpha"])},
+]
+if len(X) >= 2:
+    vifs = []
+    for j, term in enumerate(X):
+        others = sm.add_constant(np.delete(Xm, j, axis=1), has_constant="add")
+        vifs.append({"term": term, "vif": 1 / (1 - sm.OLS(Xm[:, j], others).fit().rsquared)})
+    worst = max(v["vif"] for v in vifs)
+    assumptions.append({"id": "multicollinearity", "label": "共線性", "test": "VIF", "statistic": worst, "p": None,
+                        "threshold": 10, "vif": vifs, "violated": bool(worst >= 10)})
+''',
     "correlation": '''
 x, y = V["x"], V["y"]
 d = df[[x, y]].dropna()

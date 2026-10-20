@@ -81,7 +81,7 @@ def gate_a(plan: dict, spec: MethodSpec, df: pd.DataFrame, dictionary: dict[str,
     complete = df[columns].dropna()
     checks += [fn(plan, spec, complete, dictionary) for fn in EXTRA_CHECKS.get(spec.id, ())]
     checks += [DESIGN_CHECKS[d](plan, spec, complete) for d in spec.design_checks]
-    checks += [_missing_data(spec, df, complete), _sample_size(spec, complete), _assumptions_planned(spec, plan)]
+    checks += [_missing_data(spec, df, complete), _sample_size(spec, complete, plan), _assumptions_planned(spec, plan)]
     return _apply_confirmations(checks, confirmations)
 
 
@@ -166,11 +166,22 @@ def _correlation_type(plan, spec, complete, dictionary) -> Check:
     return Check(GATE_A, "correlation_type", YES, "兩變項皆為 scale，適用 Pearson 相關")
 
 
+def _predictor_coding(plan, spec, complete, dictionary) -> Check:
+    multi = [c for c in plan["variables"]["predictors"]
+             if dictionary[c].level == "nominal" and complete[c].nunique() > 2]
+    if multi:
+        return Check(GATE_A, "predictor_coding", NO,
+                     f"{', '.join(multi)} 為多類別名目變項，需先建立虛擬變項（dummy coding）；此版本尚未支援",
+                     [{"variables": multi}], "fix_plan")
+    return Check(GATE_A, "predictor_coding", YES, "預測變項皆為數值或二元編碼")
+
+
 # method id -> extra Gate A checks: fn(plan, spec, complete_rows, dictionary) -> Check
 EXTRA_CHECKS: dict[str, tuple] = {
     "independent-t-test": (_group_structure,),
     "chi-square": (_group_structure,),
     "correlation": (_correlation_type,),
+    "linear-regression": (_predictor_coding,),
 }
 
 
@@ -189,12 +200,20 @@ def _missing_data(spec: MethodSpec, df: pd.DataFrame, complete: pd.DataFrame) ->
     )
 
 
-def _sample_size(spec: MethodSpec, complete: pd.DataFrame) -> Check:
+def _sample_size(spec: MethodSpec, complete: pd.DataFrame, plan: dict) -> Check:
     n = len(complete)
-    if n >= spec.min_n:
-        return Check(GATE_A, "sample_size", YES, f"有效樣本 {n}（最低需求 {spec.min_n}）", [{"n": n}])
-    return Check(GATE_A, "sample_size", NO, f"有效樣本只有 {n}，{spec.name_zh}至少需要 {spec.min_n}",
-                 [{"n": n}], "collect_more_data")
+    k = sum(len(plan["variables"][r.name]) for r in spec.roles if r.multiple)
+    required = spec.min_n + k
+    recommended = spec.per_predictor_n * k
+    evidence = [{"n": n, "required": required, "recommended": recommended}]
+    if n < required:
+        return Check(GATE_A, "sample_size", NO, f"有效樣本只有 {n}，{spec.name_zh}至少需要 {required}",
+                     evidence, "collect_more_data")
+    if n < recommended:
+        return Check(GATE_A, "sample_size", UNCERTAIN,
+                     f"有效樣本 {n}，低於每個預測變項約 {spec.per_predictor_n} 筆的建議（{recommended}）；"
+                     "估計可能不穩定，請確認是否接受", evidence, "request_user_confirmation")
+    return Check(GATE_A, "sample_size", YES, f"有效樣本 {n}（最低需求 {required}）", evidence)
 
 
 def _assumptions_planned(spec: MethodSpec, plan: dict) -> Check:

@@ -25,6 +25,9 @@ ALTERNATIVES_EN = {
     "normality_by_group": "consider the Mann-Whitney U test",
     "homogeneity_of_variance": "the Welch test reported above does not assume equal variances",
     "expected_counts": "consider Fisher's exact test or merging sparse categories",
+    "normality_of_residuals": "check for outliers or consider transforming the outcome",
+    "homoscedasticity": "consider robust (HC3) standard errors",
+    "multicollinearity": "consider removing or combining highly correlated predictors",
 }
 
 
@@ -457,8 +460,123 @@ class CorrelationReport:
 """
 
 
+class RegressionReport:
+    def headline(self, plan, s) -> str:
+        return (f"F({apa.df(s['df1'])}, {apa.df(s['df2'])}) = {apa.num(s['f'])}, p {apa.p_value(s['f_p'])}, "
+                f"R² = {apa.bounded(s['r_squared'])}, adjusted R² = {apa.bounded(s['adj_r_squared'])}")
+
+    def primary_p(self, s) -> float | None:
+        return s["f_p"]
+
+    def effect(self, s) -> Effect:
+        return Effect("R²", s["r_squared"])
+
+    def table(self, plan, s, lang) -> str:
+        cl = apa.num(100 * plan["options"]["conf_level"], 0)
+        head = (f"| 預測變項 | B | SE | β | t | p | {cl}% CI |" if lang == "zh"
+                else f"| Predictor | B | SE | β | t | p | {cl}% CI |")
+        rows = [head, "|---|---|---|---|---|---|---|"]
+        for c in s["coefficients"]:
+            term = ("（截距）" if lang == "zh" else "(Intercept)") if c["term"] == "(Intercept)" else c["term"]
+            beta = "—" if c["beta"] is None else apa.bounded(c["beta"])
+            p = apa.p_value(c["p"]).replace("= ", "")
+            rows.append(f"| {term} | {apa.num(c['b'])} | {apa.num(c['se'])} | {beta} | {apa.num(c['t'])} | {p} | "
+                        f"[{apa.num(c['ci_lower'])}, {apa.num(c['ci_upper'])}] |")
+        return "\n".join(rows)
+
+    def paragraph(self, plan, s, lang) -> str:
+        y, xs = plan["variables"]["outcome"], plan["variables"]["predictors"]
+        o = plan["options"]
+        df2 = apa.df(s["df2"])
+        dropped = s["n_excluded"]
+        preds = [c for c in s["coefficients"] if c["term"] != "(Intercept)"]
+        if lang == "zh":
+            kind = "簡單線性迴歸" if len(xs) == 1 else "多元線性迴歸"
+            lines = [f"以{kind}分析 {'、'.join(xs)} 對 {y} 的預測（n = {s['n']}"
+                     + (f"，排除 {dropped} 筆缺失" if dropped else "")
+                     + f"）。整體模型 {self.headline(plan, s)}，"
+                     + significance_sentence(s["f_p"], o["alpha"], "zh", "模型")]
+            for c in preds:
+                sig = apa.significant(c["p"], o["alpha"])
+                lines.append(f"{c['term']} 的迴歸係數 B = {apa.num(c['b'])}（β = {apa.bounded(c['beta'])}），"
+                             f"t({df2}) = {apa.num(c['t'])}, p {apa.p_value(c['p'])}，{'達' if sig else '未達'}統計顯著。")
+            return "".join(lines) + "\n\n" + self.table(plan, s, lang)
+        kind = "A simple linear regression" if len(xs) == 1 else "A multiple linear regression"
+        lines = [f"{kind} examined {', '.join(xs)} as predictors of {y} (n = {s['n']}"
+                 + (f"; {dropped} cases with missing values excluded" if dropped else "")
+                 + f"). The overall model, {self.headline(plan, s)}. "
+                 + significance_sentence(s["f_p"], o["alpha"], "en", subject_en="The model")]
+        for c in preds:
+            sig = apa.significant(c["p"], o["alpha"])
+            lines.append(f" For {c['term']}, B = {apa.num(c['b'])} (β = {apa.bounded(c['beta'])}), "
+                         f"t({df2}) = {apa.num(c['t'])}, p {apa.p_value(c['p'])}; this coefficient was "
+                         f"{'' if sig else 'not '}statistically significant.")
+        return "".join(lines) + "\n\n" + self.table(plan, s, lang)
+
+    def limitations(self, lang) -> str:
+        if lang == "zh":
+            return ("迴歸係數描述在控制模型中其他預測變項後的關聯；觀察性資料不能解讀為因果，"
+                    "且結果只適用於資料涵蓋的數值範圍，未納入模型的變項仍可能干擾結果。")
+        return ("Regression coefficients describe associations holding the other predictors constant; with "
+                "observational data they are not causal effects, apply only within the observed range, and may be "
+                "confounded by variables left out of the model.")
+
+    def learning(self, plan, results, spec: MethodSpec) -> str:
+        s, a = results["statistics"], results["assumptions"]
+        y, xs = plan["variables"]["outcome"], plan["variables"]["predictors"]
+        sig = apa.significant(s["f_p"], plan["options"]["alpha"])
+        lines = []
+        for x in a:
+            if x["id"] == "multicollinearity":
+                detail = "、".join(f"`{v['term']}` VIF = {apa.num(v['vif'])}" for v in x["vif"])
+                lines.append(f"- 共線性：{detail}" + ("（VIF 大於等於 10 表示嚴重共線，係數不穩定）" if x["violated"] else "（未達嚴重共線）"))
+            elif x.get("violated") is None:
+                lines.append(f"- {x['label']}：無法檢定")
+            else:
+                stat = apa.bounded(x["statistic"]) if x["test"] == "Shapiro-Wilk" else apa.num(x["statistic"])
+                lines.append(f"- {x['label']}（{x['test']}）：{stat}, p {apa.p_value(x['p'])}，"
+                             + ("未符合" if x["violated"] else "沒有證據顯示違反"))
+        first = next(c for c in s["coefficients"] if c["term"] != "(Intercept)")
+        return f"""# 學習筆記：{spec.name_zh}
+
+## 1. 目前的研究問題是什麼？
+
+能否用 {'、'.join(f'`{x}`' for x in xs)} 預測 `{y}`？每個預測變項在控制其他變項後，與 `{y}` 的關聯有多大？
+
+## 2. 為什麼選擇線性迴歸？
+
+- 依變項 `{y}` 是連續（scale）尺度。
+- 想同時估計多個預測變項各自的關聯，並得到整體模型的解釋力（R²）。
+
+## 3. 為什麼不選其他方法？
+
+- **相關分析**：只看兩個變項，無法同時控制其他變項。
+- **邏輯斯迴歸**：依變項為二元（例如是否發生）時使用。
+- **ANOVA**：預測變項全為類別、想比較組平均時使用；本質上是迴歸的特例。
+
+## 4. 如何理解統計假設？
+
+{chr(10).join(lines)}
+另外也假設關係為線性、觀察值互相獨立；建議畫殘差對預測值圖確認。
+
+## 5. 如何解讀效果量與信賴區間？
+
+- R² = {apa.bounded(s['r_squared'])}：模型解釋了 `{y}` 約 {apa.pct(s['r_squared'])} 的變異；adjusted R² = {apa.bounded(s['adj_r_squared'])} 已考慮預測變項數量。
+- 以 `{first['term']}` 為例：B = {apa.num(first['b'])} 表示在其他變項不變時，`{first['term']}` 每增加 1 單位，`{y}` 平均改變 {apa.num(first['b'])}；
+  {apa.num(100 * s['conf_level'], 0)}% CI [{apa.num(first['ci_lower'])}, {apa.num(first['ci_upper'])}] 是這個改變量的合理範圍。
+- β（標準化係數）讓不同單位的預測變項可以比較相對大小。
+
+## 6. 這個結果可以支持什麼結論？
+
+- 可以說：整體模型{'達' if sig else '未達'}統計顯著（{self.headline(plan, s)}）。
+- 不能說：預測變項「造成」`{y}` 改變；迴歸描述的是關聯。
+- 不要用模型預測資料範圍以外的數值。
+"""
+
+
 REPORTS = {"paired-t-test": PairedReport(), "independent-t-test": IndependentReport(),
-           "chi-square": ChiSquareReport(), "correlation": CorrelationReport()}
+           "chi-square": ChiSquareReport(), "correlation": CorrelationReport(),
+           "linear-regression": RegressionReport()}
 
 
 def method_report(method: str):
@@ -483,9 +601,10 @@ def assumption_lines(results: dict, spec: MethodSpec, lang: str) -> list[str]:
                     f"minimum expected count = {apa.num(a['min_expected'])}; cells with expected count "
                     f"< {a['threshold']}: {apa.pct(a['proportion_below_threshold'])}")
         elif a.get("statistic") is not None:
-            symbol = {"Shapiro-Wilk": "W", "Brown-Forsythe Levene": "F"}.get(a["test"], "statistic")
+            symbol = {"Shapiro-Wilk": "W", "Brown-Forsythe Levene": "F", "Breusch-Pagan (Koenker)": "LM",
+                      "VIF": "max VIF"}.get(a["test"], "statistic")
             value = apa.bounded(a["statistic"]) if symbol == "W" else apa.num(a["statistic"])
-            stat = f"{symbol} = {value}, p {apa.p_value(a['p'])}"
+            stat = f"{symbol} = {value}" + (f", p {apa.p_value(a['p'])}" if a.get("p") is not None else "")
         if a.get("violated") is None:
             verdict = "無法檢定" if lang == "zh" else "not testable"
         elif a["violated"]:

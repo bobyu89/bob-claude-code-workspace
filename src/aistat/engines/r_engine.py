@@ -78,6 +78,52 @@ writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
 '''
 
 METHOD_CODE = {
+    "linear-regression": r'''
+yv <- V$outcome
+X <- unlist(V$predictors)
+d <- df[complete.cases(df[, c(yv, X)]), c(yv, X), drop = FALSE]
+y <- as.numeric(d[[yv]])
+Xm <- matrix(unlist(lapply(X, function(v) as.numeric(d[[v]]))), ncol = length(X))
+fit <- lm(y ~ Xm)
+if (any(is.na(coef(fit)))) {
+  stop("預測變項完全共線（perfect collinearity），無法估計迴歸係數；請移除重複或可互相換算的預測變項。")
+}
+sm <- summary(fit)
+co <- sm$coefficients
+ci <- confint(fit, level = O$conf_level)
+terms <- c("(Intercept)", X)
+coefficients <- lapply(seq_along(terms), function(i) list(
+  term = terms[i], b = co[i, 1], se = co[i, 2], t = co[i, 3], p = co[i, 4],
+  ci_lower = ci[i, 1], ci_upper = ci[i, 2],
+  beta = if (i == 1) NULL else co[i, 1] * sd(Xm[, i - 1]) / sd(y)
+))
+fs <- sm$fstatistic
+statistics <- list(
+  n = length(y), n_excluded = nrow(df) - length(y), k = length(X),
+  coefficients = coefficients,
+  r_squared = sm$r.squared, adj_r_squared = sm$adj.r.squared,
+  f = unname(fs[1]), df1 = unname(fs[2]), df2 = unname(fs[3]),
+  f_p = unname(pf(fs[1], fs[2], fs[3], lower.tail = FALSE)),
+  residual_se = sm$sigma, conf_level = O$conf_level
+)
+# Breusch-Pagan, Koenker's studentized form: n x R^2 of squared residuals on the predictors.
+e2 <- resid(fit)^2
+bp <- length(y) * summary(lm(e2 ~ Xm))$r.squared
+bp_p <- pchisq(bp, length(X), lower.tail = FALSE)
+assumptions <- list(
+  shapiro(unname(resid(fit)), "normality_of_residuals", "殘差常態性"),
+  list(id = "homoscedasticity", label = "殘差變異數同質", test = "Breusch-Pagan (Koenker)",
+       statistic = bp, df = length(X), p = bp_p, violated = bp_p < O$alpha)
+)
+if (length(X) >= 2) {
+  vifs <- lapply(seq_along(X), function(j) {
+    list(term = X[j], vif = 1 / (1 - summary(lm(Xm[, j] ~ Xm[, -j]))$r.squared))
+  })
+  worst <- max(vapply(vifs, function(v) v$vif, 0))
+  assumptions[[3]] <- list(id = "multicollinearity", label = "共線性", test = "VIF", statistic = worst, p = NULL,
+                           threshold = 10L, vif = vifs, violated = worst >= 10)
+}
+''',
     "correlation": r'''
 d <- df[complete.cases(df[, c(V$x, V$y)]), c(V$x, V$y), drop = FALSE]
 a <- as.numeric(d[[V$x]])

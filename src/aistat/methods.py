@@ -44,6 +44,7 @@ class MethodSpec:
     design_checks: tuple[str, ...] = ()
     options: dict = field(default_factory=dict)  # option -> allowed values (tuple)
     string_roles: tuple[str, ...] = ()  # roles read as text; their levels are fixed in the plan
+    per_predictor_n: int = 0  # recommended cases per variable in a multiple role (rule of thumb)
 
     def role(self, name: str) -> Role:
         return next(r for r in self.roles if r.name == name)
@@ -147,6 +148,30 @@ _register(
 )
 
 
+_register(
+    MethodSpec(
+        id="linear-regression",
+        name_zh="線性迴歸",
+        name_en="linear regression",
+        roles=(
+            Role("outcome", "依變項", ("scale",), numeric=True),
+            Role("predictors", "預測變項", ("scale", "ordinal", "nominal"), numeric=True, multiple=True),
+        ),
+        missing_strategy="listwise",
+        min_n=3,
+        per_predictor_n=10,
+        assumptions=(
+            Assumption("normality_of_residuals", "殘差近似常態分布",
+                       "樣本數大時影響較小；可檢查極端值或考慮轉換依變項"),
+            Assumption("homoscedasticity", "殘差變異數同質",
+                       "可考慮使用 robust（HC3）標準誤，或轉換依變項"),
+            Assumption("multicollinearity", "預測變項之間沒有嚴重共線性",
+                       "可考慮移除或合併高度相關的預測變項"),
+        ),
+    )
+)
+
+
 def get_method(method: str) -> MethodSpec:
     if method not in METHODS:
         raise PlanError(f"不支援的統計方法：{method}（可用：{', '.join(METHODS)}）")
@@ -177,6 +202,13 @@ def normalize_variables(spec: MethodSpec, variables: dict) -> dict:
     if dups:
         raise PlanError(f"同一個欄位不能同時擔任多個角色：{', '.join(dups)}")
     return out
+
+
+def planned_assumptions(spec: MethodSpec, variables: dict, options: dict) -> list[str]:
+    ids = [a.id for a in spec.assumptions if a.applies(options)]
+    if spec.id == "linear-regression" and len(variables["predictors"]) < 2:
+        ids.remove("multicollinearity")
+    return ids
 
 
 def categorical_columns(spec: MethodSpec, variables: dict, dictionary: dict) -> list[str]:
