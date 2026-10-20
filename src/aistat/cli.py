@@ -264,5 +264,41 @@ def report(
         typer.echo(f"學習筆記已寫入 {path.parent / 'learning_notes.md'}")
 
 
+@app.command()
+@handles_errors
+def export(
+    run_id: str,
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="zip 路徑（預設 exports/<RUN>.zip）"),
+    include_data: bool = typer.Option(False, "--include-data", help="把資料一併放入成果包（需確認已獲授權）"),
+) -> None:
+    """匯出成果包；預設不含研究資料，只含雜湊。"""
+    path = _ws().export(run_id, output, include_data=include_data)
+    typer.echo(f"成果包已寫入 {path}" + ("（含資料）" if include_data else "（不含資料）"))
+
+
+@app.command()
+@handles_errors
+def rerun(run_id: str, timeout: float = typer.Option(120.0, help="引擎逾時秒數")) -> None:
+    """以相同程式碼與資料重新執行，核對輸出是否一致。"""
+    result = _ws().rerun(run_id, timeout=timeout)
+    if result.match:
+        typer.echo(f"{run_id} 重新執行結果與原始輸出一致（{result.engine_version}）。")
+        return
+    typer.secho(f"{run_id} 重新執行結果不一致：", fg=typer.colors.RED)
+    for d in result.differences:
+        typer.echo(f"  {d}")
+    if result.engine_version != result.original_engine_version:
+        typer.echo(f"  引擎版本不同：{result.original_engine_version} → {result.engine_version}")
+    raise typer.Exit(1)
+
+
+@app.command()
+@handles_errors
+def cancel(run_id: str) -> None:
+    """取消分析紀錄。"""
+    _ws().cancel(run_id)
+    typer.echo(f"{run_id} 已取消。")
+
+
 def main() -> None:
     app()

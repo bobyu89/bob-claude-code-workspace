@@ -13,6 +13,8 @@ import os
 import re
 import shutil
 import stat
+import tempfile
+import zipfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -56,6 +58,14 @@ class Inspection:
     dictionary: dict[str, datamod.Variable]
     issues: list[quality.Issue]
     preview: pd.DataFrame
+
+
+@dataclass
+class RerunResult:
+    match: bool
+    differences: list[str]
+    engine_version: str
+    original_engine_version: str
 
 
 @dataclass
@@ -427,11 +437,116 @@ class Workspace:
         run.set_status("REPORT_GENERATED")
         return path
 
+    # ---- runs: export, rerun, cancel -------------------------------------
+
+    def export(self, run_id: str, path: Path | str | None = None, include_data: bool = False) -> Path:
+        """Zip the run folder. Research data is left out unless explicitly requested."""
+        run = self.get_run(run_id)
+        run.require("REPORT_GENERATED", "EXPORTED", action="匯出", hint="請先產生報告（`aistat report`）。")
+        plan = run.plan
+        recorded = run.manifest["outputs"]
+        current = {
+            p.relative_to(run.dir).as_posix(): datamod.sha256_file(p)
+            for p in sorted(run.dir.rglob("*")) if p.is_file() and p.name not in ("manifest.json", "execution_log.json")
+        }
+        changed = sorted(k for k, v in recorded.items() if current.get(k) != v)
+        if changed:
+            raise InvalidState(f"以下檔案與執行時紀錄的雜湊不符，拒絕匯出：{', '.join(changed)}")
+        run.log("bundle_exported", include_data=include_data)
+        run.set_status("EXPORTED")
+        run.manifest["data_included"] = include_data
+        run.manifest["outputs"] = {**current, **recorded}
+        run.save()
+        path = Path(path) if path else self.root / "exports" / f"{run.id}.zip"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in sorted(run.dir.rglob("*")):
+                if p.is_file():
+                    zf.write(p, f"{run.id}/{p.relative_to(run.dir).as_posix()}")
+            if include_data:
+                zf.write(self.dataset_dir(plan["dataset_id"]) / "data.csv", f"{run.id}/data/data.csv")
+            zf.writestr(f"{run.id}/README.md", _bundle_readme(run, include_data))
+        self._audit("bundle_exported", run_id=run.id, include_data=include_data)
+        return path
+
+    def rerun(self, run_id: str, timeout: float = DEFAULT_TIMEOUT) -> RerunResult:
+        """Re-execute the saved script with the same engine and compare to the original raw outputs."""
+        run = self.get_run(run_id)
+        original = self.results(run.id)
+        plan = run.plan
+        data_path = self.dataset_dir(plan["dataset_id"]) / "data.csv"
+        if datamod.sha256_file(data_path) != plan["data_sha256"]:
+            raise InvalidState("資料雜湊與分析計畫不符，資料可能已被修改，拒絕重新執行。")
+        adapter = engines.get_engine(original["engine"]["name"])
+        script = run.dir / adapter.script_name
+        if datamod.sha256_file(script) != run.manifest["outputs"].get(adapter.script_name):
+            raise InvalidState(f"{adapter.script_name} 與執行時紀錄的雜湊不符，程式碼可能已被修改。")
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "results.json"
+            adapter.run(script, data_path, out, cwd=run.dir, timeout=timeout)
+            again = json.loads(out.read_text(encoding="utf-8"))
+        differences = _compare_outputs(original, again)
+        result = RerunResult(match=not differences, differences=differences,
+                             engine_version=again["engine"]["version"],
+                             original_engine_version=original["engine"]["version"])
+        run.log("rerun_checked", match=result.match, differences=differences[:20],
+                engine_version=result.engine_version)
+        return result
+
+    def cancel(self, run_id: str) -> Run:
+        run = self.get_run(run_id)
+        run.set_status("CANCELLED", by="user")
+        return run
+
     def _write_dictionary(self, dataset_id: str, dictionary: dict[str, datamod.Variable]) -> None:
         (self.dataset_dir(dataset_id) / "dictionary.json").write_text(
             json.dumps([v.to_dict() for v in dictionary.values()], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+
+RERUN_REL_TOL = 1e-9
+
+
+def _compare_outputs(a, b, path: str = "") -> list[str]:
+    """Differences between two raw outputs, ignoring engine metadata."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        out = []
+        for k in sorted(set(a) | set(b)):
+            if path == "" and k == "engine":
+                continue
+            if k not in a or k not in b:
+                out.append(f"{path}{k}: 只出現在其中一次輸出")
+            else:
+                out += _compare_outputs(a[k], b[k], f"{path}{k}.")
+        return out
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            return [f"{path.rstrip('.')}: 長度不同"]
+        return [d for i, (x, y) in enumerate(zip(a, b)) for d in _compare_outputs(x, y, f"{path}{i}.")]
+    numeric = (int, float)
+    if isinstance(a, numeric) and isinstance(b, numeric) and not isinstance(a, bool) and not isinstance(b, bool):
+        if abs(a - b) <= RERUN_REL_TOL * max(abs(a), abs(b), 1.0):
+            return []
+    elif a == b:
+        return []
+    return [f"{path.rstrip('.')}: {a!r} → {b!r}"]
+
+
+def _bundle_readme(run: Run, include_data: bool) -> str:
+    script = "analysis.R" if (run.dir / "analysis.R").is_file() else "analysis.py"
+    runner = "Rscript" if script == "analysis.R" else "python"
+    data = "data/data.csv" if include_data else "<你的 data.csv>"
+    return (
+        f"# 分析成果包 {run.id}\n\n"
+        f"- 方法：{run.manifest['method']}\n"
+        f"- 統計引擎：{(run.manifest.get('engine') or {}).get('version', '')}\n"
+        f"- 資料雜湊（canonical CSV）：{run.manifest['dataset']['data_sha256']}\n"
+        f"- 是否附資料：{'是' if include_data else '否（僅附雜湊，請另行取得授權資料）'}\n\n"
+        "## 重新執行\n\n"
+        f"```bash\ncd {run.id}\n{runner} {script} {data} raw_outputs/results_rerun.json\n```\n\n"
+        "比對 `raw_outputs/results_rerun.json` 與 `raw_outputs/results.json`；資料雜湊應與上方一致。\n"
+    )
 
 
 def _check_lang(lang: str) -> None:

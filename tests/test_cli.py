@@ -122,3 +122,15 @@ def test_review_and_report_via_cli(tmp_path):
     assert refused.exit_code == 1 and "values_traceable" in refused.output
     assert reported.exit_code == 0, reported.output
     assert "statistical_report.md" in reported.output and "learning_notes.md" in reported.output
+
+
+def test_export_and_rerun_via_cli(tmp_path):
+    ws_dir, run_id = _executed_run(tmp_path)
+    invoke(ws_dir, "report", run_id)
+
+    rerun = invoke(ws_dir, "rerun", run_id)
+    exported = invoke(ws_dir, "export", run_id)
+
+    assert rerun.exit_code == 0 and "一致" in rerun.output
+    assert exported.exit_code == 0, exported.output
+    assert (ws_dir / "exports" / f"{run_id}.zip").is_file()
