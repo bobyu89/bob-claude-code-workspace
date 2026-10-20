@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "jev_review.schema.json",
+  "title": "JEV review (method_review.json / result_review.json)",
+  "type": "object",
+  "required": [
+    "gate",
+    "passed",
+    "checks"
+  ],
+  "properties": {
+    "gate": {
+      "enum": [
+        "method_validation",
+        "result_validation"
+      ]
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      },
+      "minItems": 1
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "evaluated_at": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "check": {
+      "type": "object",
+      "required": [
+        "gate",
+        "check_id",
+        "verdict",
+        "evidence",
+        "reason",
+        "required_action"
+      ],
+      "properties": {
+        "gate": {
+          "enum": [
+            "method_validation",
+            "result_validation"
+          ]
+        },
+        "check_id": {
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "YES",
+            "NO",
+            "UNCERTAIN"
+          ]
+        },
+        "evidence": {
+          "type": "array"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "required_action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

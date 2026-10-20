@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manifest.schema.json",
+  "title": "Run manifest (manifest.json)",
+  "type": "object",
+  "required": [
+    "run_id",
+    "aistat_version",
+    "created_at",
+    "status",
+    "history",
+    "dataset",
+    "method",
+    "engine",
+    "confirmations",
+    "outputs"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "aistat_version": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "CREATED",
+        "IMPORTED",
+        "PROFILED",
+        "PLAN_DRAFTED",
+        "JEV_GATE_A",
+        "USER_APPROVAL",
+        "EXECUTING",
+        "EXECUTED",
+        "JEV_GATE_B",
+        "REPORT_GENERATED",
+        "EXPORTED",
+        "BLOCKED",
+        "FAILED",
+        "CANCELLED"
+      ]
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "state",
+          "ts"
+        ],
+        "properties": {
+          "state": {
+            "enum": [
+              "CREATED",
+              "IMPORTED",
+              "PROFILED",
+              "PLAN_DRAFTED",
+              "JEV_GATE_A",
+              "USER_APPROVAL",
+              "EXECUTING",
+              "EXECUTED",
+              "JEV_GATE_B",
+              "REPORT_GENERATED",
+              "EXPORTED",
+              "BLOCKED",
+              "FAILED",
+              "CANCELLED"
+            ]
+          }
+        }
+      }
+    },
+    "dataset": {
+      "type": "object",
+      "required": [
+        "id",
+        "sha256",
+        "data_sha256"
+      ]
+    },
+    "method": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "engine": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "confirmations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "check_id",
+          "ts",
+          "by"
+        ]
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "required": [
+        "variables",
+        "options",
+        "missing_strategy"
+      ],
+      "properties": {
+        "variables": {
+          "type": "object"
+        },
+        "options": {
+          "type": "object"
+        },
+        "missing_strategy": {
+          "type": "string"
+        }
+      }
+    },
+    "data_included": {
+      "type": "boolean"
+    },
+    "executed_data_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
