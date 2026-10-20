@@ -58,3 +58,38 @@ def test_inspect_dictionary_set_and_export(tmp_path):
     assert set_level.exit_code == 0, set_level.output
     assert exported.exit_code == 0
     assert "item" in (tmp_path / "dd.csv").read_text(encoding="utf-8")
+
+
+def test_plan_approve_analyze_via_cli(tmp_path):
+    from conftest import GOLDEN
+
+    ws_dir = tmp_path / "proj"
+    invoke(ws_dir, "init")
+    invoke(ws_dir, "import", str(GOLDEN / "sleep_wide.csv"))
+
+    planned = invoke(ws_dir, "plan", "--method", "paired-t-test", "--var", "before=drug1", "--var", "after=drug2")
+    run_id = next(w for w in planned.output.split() if w.startswith("RUN_"))
+    refused = invoke(ws_dir, "analyze", run_id, "--engine", "python")
+    approved = invoke(ws_dir, "approve", run_id, "--confirm", "pairing_structure")
+    analyzed = invoke(ws_dir, "analyze", run_id, "--engine", "python")
+    status = invoke(ws_dir, "status", run_id)
+    runs = invoke(ws_dir, "runs")
+
+    assert planned.exit_code == 0, planned.output
+    assert "[UNCERTAIN] pairing_structure" in planned.output
+    assert refused.exit_code == 1 and "核准" in refused.output
+    assert approved.exit_code == 0, approved.output
+    assert analyzed.exit_code == 0, analyzed.output
+    assert "t(9) = 4.06, p = .003" in analyzed.output
+    assert "EXECUTED" in status.output and "USER_APPROVAL" in status.output
+    assert run_id in runs.output
+
+
+def test_plan_rejects_malformed_var_option(tmp_path):
+    ws_dir = tmp_path / "proj"
+    invoke(ws_dir, "init")
+
+    result = invoke(ws_dir, "plan", "--method", "paired-t-test", "--var", "drug1")
+
+    assert result.exit_code == 1
+    assert "role=欄位" in result.output

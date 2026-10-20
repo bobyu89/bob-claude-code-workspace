@@ -8,7 +8,8 @@ from typing import Optional
 
 import typer
 
-from .errors import AistatError
+from . import reporting
+from .errors import AistatError, PlanError
 from .workspace import Workspace
 
 app = typer.Typer(
@@ -123,6 +124,108 @@ def dictionary_export(
 ) -> None:
     """匯出 data_dictionary.csv。"""
     typer.echo(f"資料字典已寫入 {_ws().export_dictionary(dataset, path)}")
+
+
+def _pairs(items: list[str], what: str) -> dict:
+    out = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip() or not value.strip():
+            raise PlanError(f"{what} 格式應為 role=欄位（例：--var before=pre_score），收到：{item}")
+        out[key.strip()] = value.strip()
+    return out
+
+
+def _print_review(review) -> None:
+    for c in review.checks:
+        color = {"YES": typer.colors.GREEN, "NO": typer.colors.RED}.get(c.verdict, typer.colors.YELLOW)
+        typer.secho(f"  [{c.verdict}] {c.check_id}：{c.reason}", fg=color)
+
+
+def _print_gate_a_next_step(ws: Workspace, run) -> None:
+    review = ws.method_review(run.id)
+    typer.echo(f"{run.id}  狀態 {run.status}\nJEV Gate A（分析執行前審查）：")
+    _print_review(review)
+    if run.status == "BLOCKED":
+        typer.echo("\n計畫被擋下：請依 NO 項目修正（例如 `aistat dictionary set`）後執行 "
+                   f"`aistat validate {run.id}`，或建立新計畫。")
+    elif run.status == "JEV_GATE_A":
+        pending = [c.check_id for c in review.by_verdict("UNCERTAIN")]
+        confirm = "".join(f" --confirm {c}" for c in pending)
+        typer.echo(f"\n確認上述內容無誤後，請由研究者本人核准：aistat approve {run.id}{confirm}")
+
+
+@app.command()
+@handles_errors
+def plan(
+    method: str = typer.Option(..., help="統計方法，例如 paired-t-test"),
+    var: list[str] = typer.Option([], "--var", help="變項角色，role=欄位，可重複"),
+    option: list[str] = typer.Option([], "--option", help="方法選項，key=value，可重複"),
+    dataset: Optional[str] = typer.Option(None, help="資料集 ID"),
+) -> None:
+    """建立分析計畫並執行 JEV Gate A。"""
+    ws = _ws()
+    run = ws.create_plan(method, _pairs(var, "--var"), dataset_id=dataset, options=_pairs(option, "--option"))
+    _print_gate_a_next_step(ws, run)
+
+
+@app.command()
+@handles_errors
+def validate(run_id: str) -> None:
+    """依目前資料字典重新執行 JEV Gate A。"""
+    ws = _ws()
+    _print_gate_a_next_step(ws, ws.validate_plan(run_id))
+
+
+@app.command()
+@handles_errors
+def approve(
+    run_id: str,
+    confirm: list[str] = typer.Option([], "--confirm", help="確認 UNCERTAIN 項目的 check_id，可重複"),
+) -> None:
+    """研究者核准分析計畫（確認 UNCERTAIN 項目）。"""
+    run = _ws().approve(run_id, confirm=confirm)
+    typer.echo(f"{run.id} 已核准。下一步：aistat analyze {run.id}")
+
+
+@app.command()
+@handles_errors
+def analyze(
+    run_id: str,
+    engine: str = typer.Option("auto", help="auto | r | python"),
+    timeout: float = typer.Option(120.0, help="引擎逾時秒數"),
+) -> None:
+    """以實際統計引擎執行已核准的分析計畫。"""
+    ws = _ws()
+    run = ws.execute(run_id, engine=engine, timeout=timeout)
+    results = ws.results(run.id)
+    typer.echo(f"{run.id} 已由 {results['engine']['version']} 執行完成。")
+    typer.echo(reporting.headline(run.plan, results))
+    for a in results.get("assumptions", []):
+        flag = "違反" if a.get("violated") else ("未檢定" if a.get("violated") is None else "符合")
+        typer.echo(f"  假設檢查 {a['label']}（{a['test']}）：{flag}")
+    typer.echo(f"下一步：aistat review {run.id}")
+
+
+@app.command()
+@handles_errors
+def runs() -> None:
+    """列出所有分析紀錄。"""
+    items = _ws().list_runs()
+    if not items:
+        typer.echo("尚無分析紀錄。")
+    for r in items:
+        typer.echo(f"{r.id}\t{r.status}\t{r.manifest['method']}\t{r.manifest['dataset']['id']}")
+
+
+@app.command()
+@handles_errors
+def status(run_id: str) -> None:
+    """顯示分析紀錄的狀態歷程。"""
+    run = _ws().get_run(run_id)
+    typer.echo(f"{run.id}  {run.manifest['method']}  資料集 {run.manifest['dataset']['id']}  狀態 {run.status}")
+    for h in run.history:
+        typer.echo(f"  {h['ts']}  {h['state']}")
 
 
 def main() -> None:
