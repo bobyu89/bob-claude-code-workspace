@@ -78,6 +78,28 @@ writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
 '''
 
 METHOD_CODE = {
+    "descriptives": r'''
+summaries <- lapply(unlist(V$variables), function(name) {
+  col <- df[[name]]
+  valid <- col[!is.na(col)]
+  base <- list(name = name, n = length(valid), missing = sum(is.na(col)))
+  if (name %in% unlist(PLAN$string_columns)) {
+    total <- length(valid)
+    freqs <- lapply(unlist(PLAN$levels[[name]]), function(lvl) {
+      list(level = lvl, count = sum(valid == lvl), proportion = if (total > 0) sum(valid == lvl) / total else NULL)
+    })
+    return(c(base, list(kind = "categorical", frequencies = freqs)))
+  }
+  x <- as.numeric(valid)
+  q <- if (length(x) > 0) unname(quantile(x, c(0.25, 0.5, 0.75), type = 7)) else c(NA, NA, NA)
+  c(base, list(kind = "numeric",
+               mean = if (length(x) > 0) mean(x) else NULL,
+               sd = if (length(x) > 1) sd(x) else NULL,
+               median = q[2], q1 = q[1], q3 = q[3],
+               min = if (length(x) > 0) min(x) else NULL, max = if (length(x) > 0) max(x) else NULL))
+})
+statistics <- list(n_rows = nrow(df), variables = summaries)
+''',
     "linear-regression": r'''
 yv <- V$outcome
 X <- unlist(V$predictors)

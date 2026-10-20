@@ -71,6 +71,28 @@ with open(OUT, "w", encoding="utf-8") as f:
 '''
 
 METHOD_CODE = {
+    "descriptives": '''
+summaries = []
+for name in V["variables"]:
+    col = df[name]
+    valid = col.dropna()
+    base = {"name": name, "n": int(len(valid)), "missing": int(col.isna().sum())}
+    if name in PLAN["string_columns"]:
+        total = len(valid)
+        freqs = [{"level": lvl, "count": int((valid == lvl).sum()),
+                  "proportion": float((valid == lvl).sum() / total) if total else None}
+                 for lvl in PLAN["levels"][name]]
+        summaries.append({**base, "kind": "categorical", "frequencies": freqs})
+    else:
+        x = valid.to_numpy(dtype=float)
+        q1, med, q3 = np.percentile(x, [25, 50, 75]) if len(x) else (None, None, None)  # numpy "linear" = R type 7
+        summaries.append({**base, "kind": "numeric",
+                          "mean": x.mean() if len(x) else None,
+                          "sd": np.std(x, ddof=1) if len(x) > 1 else None,
+                          "median": med, "q1": q1, "q3": q3,
+                          "min": x.min() if len(x) else None, "max": x.max() if len(x) else None})
+statistics = {"n_rows": int(len(df)), "variables": summaries}
+''',
     "linear-regression": '''
 import statsmodels
 import statsmodels.api as sm

@@ -81,7 +81,7 @@ def gate_a(plan: dict, spec: MethodSpec, df: pd.DataFrame, dictionary: dict[str,
     complete = df[columns].dropna()
     checks += [fn(plan, spec, complete, dictionary) for fn in EXTRA_CHECKS.get(spec.id, ())]
     checks += [DESIGN_CHECKS[d](plan, spec, complete) for d in spec.design_checks]
-    checks += [_missing_data(spec, df, complete), _sample_size(spec, complete, plan), _assumptions_planned(spec, plan)]
+    checks += [_missing_data(spec, df, complete), _sample_size(spec, complete, plan, df), _assumptions_planned(spec, plan)]
     return _apply_confirmations(checks, confirmations)
 
 
@@ -186,10 +186,16 @@ EXTRA_CHECKS: dict[str, tuple] = {
 
 
 def _missing_data(spec: MethodSpec, df: pd.DataFrame, complete: pd.DataFrame) -> Check:
+    if spec.missing_strategy == "available-case":
+        counts = {c: int(df[c].isna().sum()) for c in complete.columns}
+        detail = "、".join(f"{c} 缺 {k}" for c, k in counts.items() if k) or "無缺失"
+        return Check(GATE_A, "missing_data", YES, f"各變項分別以有效值計算並報告缺失數（{detail}）",
+                     [{"strategy": spec.missing_strategy, "missing": counts}])
     total, kept = len(df), len(complete)
     excluded = total - kept
     ratio = excluded / total if total else 0.0
-    strategy = {"complete-pairs": "只保留前後測皆有值的配對", "listwise": "排除任一分析變項缺失的列"}[spec.missing_strategy]
+    strategy = {"complete-pairs": "只保留前後測皆有值的配對",
+                "listwise": "排除任一分析變項缺失的列"}[spec.missing_strategy]
     evidence = [{"strategy": spec.missing_strategy, "rows": total, "excluded": excluded}]
     if ratio <= MISSING_OK_RATIO:
         return Check(GATE_A, "missing_data", YES, f"{strategy}：排除 {excluded}/{total} 列", evidence)
@@ -200,9 +206,12 @@ def _missing_data(spec: MethodSpec, df: pd.DataFrame, complete: pd.DataFrame) ->
     )
 
 
-def _sample_size(spec: MethodSpec, complete: pd.DataFrame, plan: dict) -> Check:
-    n = len(complete)
-    k = sum(len(plan["variables"][r.name]) for r in spec.roles if r.multiple)
+def _sample_size(spec: MethodSpec, complete: pd.DataFrame, plan: dict, df: pd.DataFrame) -> Check:
+    if spec.missing_strategy == "available-case":
+        n = min(int(df[c].notna().sum()) for c in complete.columns)
+    else:
+        n = len(complete)
+    k = sum(len(plan["variables"][r.name]) for r in spec.roles if r.multiple) if spec.per_predictor_n else 0
     required = spec.min_n + k
     recommended = spec.per_predictor_n * k
     evidence = [{"n": n, "required": required, "recommended": recommended}]
@@ -301,16 +310,20 @@ def _engine_provenance(results: dict | None, p: Provenance) -> Check:
                  f"結果來自 {results['engine']['version']}，原始輸出與資料雜湊一致", evidence)
 
 
+def _labels(plan: dict) -> list[str]:
+    levels = [str(x) for values in (plan.get("levels") or {}).values() for x in values]
+    return plan_columns(plan["variables"]) + levels + [plan["dataset_id"]]
+
+
 def _audited_text(text: str, plan: dict) -> str:
     """The part of a draft whose numbers must be traceable: code spans and the JEV appendix excluded,
-    and variable names / group labels removed so digits inside names are not read as statistics."""
+    and variable names / category labels removed so digits inside names are not read as statistics.
+    Purely numeric labels (e.g. Likert codes) are left in place and allowed by `allowed_tokens`."""
     from .reporting import JEV_HEADING
 
     text = text.split(JEV_HEADING, 1)[0]
     text = CODE_SPAN.sub(" ", text)
-    levels = [str(x) for values in (plan.get("levels") or {}).values() for x in values]
-    names = plan_columns(plan["variables"]) + levels + [plan["dataset_id"]]
-    for name in sorted(set(names), key=len, reverse=True):
+    for name in sorted({n for n in _labels(plan) if not NUMBER.fullmatch(n)}, key=len, reverse=True):
         text = text.replace(name, " ")
     return text
 
@@ -331,7 +344,7 @@ def allowed_tokens(plan: dict, results: dict) -> set[str]:
     from . import apa
     from .reporting import CITATION_TOKENS
 
-    tokens = set(CITATION_TOKENS) | {".001", ".999"}
+    tokens = set(CITATION_TOKENS) | {".001", ".999"} | {n for n in _labels(plan) if NUMBER.fullmatch(n)}
     values = _numbers(results["statistics"]) + _numbers(results.get("assumptions", []))
     values += _numbers(plan["options"])
     for v in values:
@@ -379,6 +392,8 @@ def _p_value_format(text: str) -> Check:
 def _effect_size_ci(text: str, effect) -> Check:
     from . import apa
 
+    if effect is None:
+        return Check(GATE_B, "effect_size_ci", YES, "此方法不涉及效果量或信賴區間")
     evidence = [{"effect": effect.name, "value": effect.value, "ci": [effect.ci_lower, effect.ci_upper]}]
     if effect.value is None:
         return Check(GATE_B, "effect_size_ci", UNCERTAIN, f"引擎未產生 {effect.name}（可能變異為 0）", evidence,

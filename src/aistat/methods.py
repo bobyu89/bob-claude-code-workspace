@@ -61,6 +61,17 @@ def _register(spec: MethodSpec) -> None:
 
 _register(
     MethodSpec(
+        id="descriptives",
+        name_zh="描述性統計",
+        name_en="descriptive statistics",
+        roles=(Role("variables", "變項", ("nominal", "ordinal", "scale"), multiple=True),),
+        missing_strategy="available-case",
+        min_n=1,
+    )
+)
+
+_register(
+    MethodSpec(
         id="paired-t-test",
         name_zh="配對樣本 t 檢定",
         name_en="paired-samples t test",

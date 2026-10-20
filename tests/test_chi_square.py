@@ -20,10 +20,7 @@ def table_csv(cells):
 
 @pytest.fixture
 def ws(tmp_path):
-    ws = make_workspace(tmp_path)
-    write_dataset(ws, tmp_path, "wards.csv",
-                  table_csv({("A", "yes"): 20, ("A", "no"): 30, ("B", "yes"): 15, ("B", "no"): 35}))
-    return ws
+    return make_workspace(tmp_path, "wards.csv")
 
 
 @pytest.mark.parametrize("engine", ["python", pytest.param("r", marks=requires_r)])
