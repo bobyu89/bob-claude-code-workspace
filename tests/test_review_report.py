@@ -144,3 +144,13 @@ def test_review_requires_executed_run(ws):
 
     with pytest.raises(InvalidState):
         ws.review(run.id)
+
+
+def test_short_category_labels_do_not_corrupt_words(tmp_path):
+    ws = make_workspace(tmp_path, "wards.csv")
+    run, _ = run_analysis(ws, "chi-square", {"row": "ward", "column": "passed"}, "python")
+
+    text = ws.draft_report(run.id, lang="en").replace("was not statistically", "was statistically")
+
+    assert check(ws.review(run.id, draft=text), "significance_consistency").verdict == "NO"
+    assert check(ws.review(run.id, lang="en"), "significance_consistency").verdict == "YES"

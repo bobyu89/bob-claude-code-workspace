@@ -324,7 +324,8 @@ def _audited_text(text: str, plan: dict) -> str:
     text = text.split(JEV_HEADING, 1)[0]
     text = CODE_SPAN.sub(" ", text)
     for name in sorted({n for n in _labels(plan) if not NUMBER.fullmatch(n)}, key=len, reverse=True):
-        text = text.replace(name, " ")
+        # ASCII boundaries only: label "no" must not eat the "no" in "not"
+        text = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", " ", text)
     return text
 
 
