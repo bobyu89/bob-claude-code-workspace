@@ -79,9 +79,9 @@ def gate_a(plan: dict, spec: MethodSpec, df: pd.DataFrame, dictionary: dict[str,
         _measurement_level(spec, variables, dictionary),
     ]
     complete = df[columns].dropna()
-    checks += [fn(plan, spec, df, complete) for fn in EXTRA_CHECKS.get(spec.id, ())]
+    checks += [fn(plan, spec, complete, dictionary) for fn in EXTRA_CHECKS.get(spec.id, ())]
     checks += [DESIGN_CHECKS[d](plan, spec, complete) for d in spec.design_checks]
-    checks += [_missing_data(spec, df, complete), _sample_size(spec, complete), _assumptions_planned(spec)]
+    checks += [_missing_data(spec, df, complete), _sample_size(spec, complete), _assumptions_planned(spec, plan)]
     return _apply_confirmations(checks, confirmations)
 
 
@@ -134,7 +134,7 @@ def _independence(plan, spec, complete) -> Check:
 
 DESIGN_CHECKS = {"pairing_structure": _pairing_structure, "independence": _independence}
 
-def _group_structure(plan, spec, df, complete) -> Check:
+def _group_structure(plan, spec, complete, dictionary) -> Check:
     """Every categorical role needs at least two levels; a two-group comparison needs exactly two,
     each with at least two observations."""
     problems, evidence = [], []
@@ -154,8 +154,24 @@ def _group_structure(plan, spec, df, complete) -> Check:
     return Check(GATE_A, "group_structure", YES, "分組結構符合方法要求", evidence)
 
 
-# method id -> extra Gate A checks: fn(plan, spec, df, complete) -> Check
-EXTRA_CHECKS: dict[str, tuple] = {"independent-t-test": (_group_structure,), "chi-square": (_group_structure,)}
+def _correlation_type(plan, spec, complete, dictionary) -> Check:
+    method = plan["options"]["method"]
+    if method == "spearman":
+        return Check(GATE_A, "correlation_type", YES, "Spearman 等級相關適用 ordinal 與 scale 變項")
+    ordinal = [c for c in plan_columns(plan["variables"]) if dictionary[c].level == "ordinal"]
+    if ordinal:
+        return Check(GATE_A, "correlation_type", UNCERTAIN,
+                     f"{', '.join(ordinal)} 為 ordinal，Pearson 相關假設等距尺度；可改用 --option method=spearman，"
+                     "或確認以等距尺度處理", [{"ordinal": ordinal}], "request_user_confirmation")
+    return Check(GATE_A, "correlation_type", YES, "兩變項皆為 scale，適用 Pearson 相關")
+
+
+# method id -> extra Gate A checks: fn(plan, spec, complete_rows, dictionary) -> Check
+EXTRA_CHECKS: dict[str, tuple] = {
+    "independent-t-test": (_group_structure,),
+    "chi-square": (_group_structure,),
+    "correlation": (_correlation_type,),
+}
 
 
 def _missing_data(spec: MethodSpec, df: pd.DataFrame, complete: pd.DataFrame) -> Check:
@@ -181,12 +197,12 @@ def _sample_size(spec: MethodSpec, complete: pd.DataFrame) -> Check:
                  [{"n": n}], "collect_more_data")
 
 
-def _assumptions_planned(spec: MethodSpec) -> Check:
-    if not spec.assumptions:
-        return Check(GATE_A, "assumptions_planned", YES, "此方法沒有需要另外檢查的統計假設")
-    labels = "、".join(a.label for a in spec.assumptions)
-    return Check(GATE_A, "assumptions_planned", YES, f"執行時由統計引擎檢查：{labels}",
-                 [a.id for a in spec.assumptions])
+def _assumptions_planned(spec: MethodSpec, plan: dict) -> Check:
+    planned = [a for a in spec.assumptions if a.id in plan["assumptions"]]
+    if not planned:
+        return Check(GATE_A, "assumptions_planned", YES, "此分析沒有需要另外檢查的統計假設")
+    labels = "、".join(a.label for a in planned)
+    return Check(GATE_A, "assumptions_planned", YES, f"執行時由統計引擎檢查：{labels}", [a.id for a in planned])
 
 
 def _apply_confirmations(checks: list[Check], confirmations: list[dict]) -> Review:

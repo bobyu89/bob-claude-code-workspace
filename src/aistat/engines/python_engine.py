@@ -71,6 +71,28 @@ with open(OUT, "w", encoding="utf-8") as f:
 '''
 
 METHOD_CODE = {
+    "correlation": '''
+x, y = V["x"], V["y"]
+d = df[[x, y]].dropna()
+a = d[x].to_numpy(dtype=float)
+b = d[y].to_numpy(dtype=float)
+n = len(d)
+lo = hi = None
+if O["method"] == "pearson":
+    res = stats.pearsonr(a, b)
+    ci = res.confidence_interval(confidence_level=O["conf_level"])
+    lo, hi = ci.low, ci.high
+    assumptions = [{**shapiro(a, "normality", f"{x} 常態性"), "variable": x},
+                   {**shapiro(b, "normality", f"{y} 常態性"), "variable": y}]
+else:
+    res = stats.spearmanr(a, b)  # p from the t approximation, as R's cor.test(exact = FALSE)
+r = float(res.statistic)
+statistics = {
+    "n": n, "n_excluded": len(df) - n, "method": O["method"],
+    "r": r, "t": r * math.sqrt((n - 2) / (1 - r * r)) if abs(r) < 1 else None, "df": n - 2, "p": res.pvalue,
+    "ci_lower": lo, "ci_upper": hi, "conf_level": O["conf_level"],
+}
+''',
     "chi-square": '''
 r, c = V["row"], V["column"]
 d = df[[r, c]].dropna()

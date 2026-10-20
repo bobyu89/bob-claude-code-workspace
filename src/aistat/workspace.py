@@ -256,7 +256,7 @@ class Workspace:
             "variables": variables,
             "options": options,
             "missing_strategy": spec.missing_strategy,
-            "assumptions": [a.id for a in spec.assumptions],
+            "assumptions": [a.id for a in spec.assumptions if a.applies(options)],
             **self._category_levels(ds.id, spec, variables),
         }
         run.write_json("analysis_plan.json", plan)

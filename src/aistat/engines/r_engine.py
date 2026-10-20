@@ -78,6 +78,29 @@ writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
 '''
 
 METHOD_CODE = {
+    "correlation": r'''
+d <- df[complete.cases(df[, c(V$x, V$y)]), c(V$x, V$y), drop = FALSE]
+a <- as.numeric(d[[V$x]])
+b <- as.numeric(d[[V$y]])
+n <- nrow(d)
+lo <- NULL
+hi <- NULL
+if (O$method == "pearson") {
+  ct <- cor.test(a, b, method = "pearson", conf.level = O$conf_level)
+  lo <- ct$conf.int[1]
+  hi <- ct$conf.int[2]
+  assumptions <- list(c(shapiro(a, "normality", paste0(V$x, " 常態性")), list(variable = V$x)),
+                      c(shapiro(b, "normality", paste0(V$y, " 常態性")), list(variable = V$y)))
+} else {
+  ct <- cor.test(a, b, method = "spearman", exact = FALSE)
+}
+r <- unname(ct$estimate)
+statistics <- list(
+  n = n, n_excluded = nrow(df) - n, method = O$method,
+  r = r, t = if (abs(r) < 1) r * sqrt((n - 2) / (1 - r^2)) else NULL, df = n - 2L, p = ct$p.value,
+  ci_lower = lo, ci_upper = hi, conf_level = O$conf_level
+)
+''',
     "chi-square": r'''
 rv <- V$row
 cv <- V$column

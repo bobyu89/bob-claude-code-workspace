@@ -362,8 +362,103 @@ Cramér's V = {apa.bounded(s['cramers_v'])}（介於 0 到 1，0 代表完全無
 """
 
 
+def r_label(r: float, lang: str) -> str:
+    size = abs(r)
+    zh, en = (("微弱", "negligible") if size < 0.1 else ("小", "small") if size < 0.3
+              else ("中等", "medium") if size < 0.5 else ("大", "large"))
+    return f"依 Cohen（1988）的慣例屬於{zh}相關" if lang == "zh" else f"a {en} correlation by Cohen's (1988) convention"
+
+
+class CorrelationReport:
+    def _symbol(self, s) -> str:
+        return "r" if s["method"] == "pearson" else "r_s"
+
+    def headline(self, plan, s) -> str:
+        return f"{self._symbol(s)}({apa.df(s['df'])}) = {apa.bounded(s['r'])}, p {apa.p_value(s['p'])}"
+
+    def primary_p(self, s) -> float | None:
+        return s["p"]
+
+    def effect(self, s) -> Effect:
+        return Effect(self._symbol(s), s["r"], s["r"], s["ci_lower"], s["ci_upper"])
+
+    def paragraph(self, plan, s, lang) -> str:
+        x, y = plan["variables"]["x"], plan["variables"]["y"]
+        o = plan["options"]
+        stats = self.headline(plan, s)
+        if s["ci_lower"] is not None:
+            cl = apa.num(100 * o["conf_level"], 0)
+            stats += f", {cl}% CI [{apa.bounded(s['ci_lower'])}, {apa.bounded(s['ci_upper'])}]"
+        dropped = s["n_excluded"]
+        name_zh = "Pearson 積差相關" if s["method"] == "pearson" else "Spearman 等級相關"
+        name_en = "A Pearson correlation" if s["method"] == "pearson" else "A Spearman rank correlation"
+        if lang == "zh":
+            direction = "正相關" if s["r"] > 0 else "負相關" if s["r"] < 0 else "零相關"
+            return (f"以{name_zh}分析 {x} 與 {y} 的關係（n = {s['n']}"
+                    + (f"，排除 {dropped} 筆缺失" if dropped else "") + f"），兩者呈{direction}，{stats}。"
+                    + significance_sentence(s["p"], o["alpha"], "zh", "相關") + f"{r_label(s['r'], 'zh')}。")
+        direction = "positive" if s["r"] > 0 else "negative" if s["r"] < 0 else "zero"
+        return (f"{name_en} examined the relationship between {x} and {y} (n = {s['n']}"
+                + (f"; {dropped} cases with missing values excluded" if dropped else "")
+                + f"). The correlation was {direction}, {stats}. "
+                + significance_sentence(s["p"], o["alpha"], "en", subject_en="The correlation")
+                + f" This is {r_label(s['r'], 'en')}.")
+
+    def limitations(self, lang) -> str:
+        if lang == "zh":
+            return "相關只描述兩變項共同變化的程度，不代表其中一個影響另一個，也可能由第三個變項同時影響兩者。"
+        return ("Correlation describes how two variables vary together; it does not show that one influences the "
+                "other, and both may depend on a third variable.")
+
+    def learning(self, plan, results, spec: MethodSpec) -> str:
+        s = results["statistics"]
+        x, y = plan["variables"]["x"], plan["variables"]["y"]
+        sig = apa.significant(s["p"], plan["options"]["alpha"])
+        pearson = s["method"] == "pearson"
+        normal = "\n".join(
+            f"- `{a['variable']}`：" + ("無法檢定" if a.get("violated") is None else
+                                       f"W = {apa.bounded(a['statistic'])}, p {apa.p_value(a['p'])}，"
+                                       + ("偏離常態，可考慮 Spearman" if a["violated"] else "沒有證據顯示偏離常態"))
+            for a in results["assumptions"]) or "- Spearman 以等級計算，不需要常態假設。"
+        ci = (f"{apa.num(100 * s['conf_level'], 0)}% CI [{apa.bounded(s['ci_lower'])}, {apa.bounded(s['ci_upper'])}]："
+              f"母體相關係數的合理範圍；區間{'不包含' if sig else '包含'} 0。") if pearson else "Spearman 相關本平台不計算信賴區間。"
+        return f"""# 學習筆記：{spec.name_zh}
+
+## 1. 目前的研究問題是什麼？
+
+`{x}` 與 `{y}` 之間是否有線性（或單調）關係？關係的方向與強度為何？
+虛無假設 H0：母體相關係數為 0。
+
+## 2. 為什麼選擇{'Pearson 積差相關' if pearson else 'Spearman 等級相關'}？
+
+- 兩個變項都是數值，且每一列是同一位受試者的兩個測量。
+- {'Pearson 適用兩個連續（scale）變項的線性關係。' if pearson else 'Spearman 以等級計算，適用 ordinal 變項、偏態分布或有極端值時的單調關係。'}
+
+## 3. 為什麼不選其他方法？
+
+- **{'Spearman' if pearson else 'Pearson'}**：{'變項為 ordinal、明顯偏態或有極端值時使用。' if pearson else '兩變項皆為連續且近似常態、關係為線性時較有檢定力。'}
+- **線性迴歸**：想用一個變項「預測」另一個、或同時控制其他變項時使用。
+- **卡方檢定**：兩個都是類別變項時使用。
+
+## 4. 如何理解統計假設？
+
+{normal}
+相關分析也假設關係大致為線性（Pearson）或單調（Spearman）；請畫散布圖確認，並注意極端值。
+
+## 5. 如何解讀效果量與信賴區間？
+
+- 相關係數本身就是效果量：{self._symbol(s)} = {apa.bounded(s['r'])}，{r_label(s['r'], 'zh')}。
+- {ci}
+
+## 6. 這個結果可以支持什麼結論？
+
+- 可以說：`{x}` 與 `{y}` 的相關{'達' if sig else '未達'}統計顯著（{self.headline(plan, s)}）。
+- 不能說：`{x}` 造成 `{y}` 的變化；相關不等於因果。
+"""
+
+
 REPORTS = {"paired-t-test": PairedReport(), "independent-t-test": IndependentReport(),
-           "chi-square": ChiSquareReport()}
+           "chi-square": ChiSquareReport(), "correlation": CorrelationReport()}
 
 
 def method_report(method: str):
@@ -379,7 +474,7 @@ def assumption_lines(results: dict, spec: MethodSpec, lang: str) -> list[str]:
     alternatives = {a.id: a.alternative for a in spec.assumptions}
     lines = []
     for a in results.get("assumptions", []):
-        group = f" [{a['group']}]" if a.get("group") else ""
+        group = f" [{a.get('group') or a.get('variable')}]" if a.get("group") or a.get("variable") else ""
         label = f"{a['label']}（{a['test']}）" if lang == "zh" else f"{a['id']}{group} ({a['test']})"
         stat = ""
         if a["id"] == "expected_counts":

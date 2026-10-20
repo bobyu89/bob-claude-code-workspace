@@ -26,6 +26,10 @@ class Assumption:
     id: str
     label: str
     alternative: str  # what to consider when violated
+    when: tuple[tuple[str, str], ...] = ()  # option values under which it applies, e.g. (("method", "pearson"),)
+
+    def applies(self, options: dict) -> bool:
+        return all(options.get(k) == v for k, v in self.when)
 
 
 @dataclass(frozen=True)
@@ -119,6 +123,26 @@ _register(
         ),
         design_checks=("independence",),
         string_roles=("row", "column"),
+    )
+)
+
+
+_register(
+    MethodSpec(
+        id="correlation",
+        name_zh="相關分析",
+        name_en="correlation analysis",
+        roles=(
+            Role("x", "變項一", ("scale", "ordinal"), numeric=True),
+            Role("y", "變項二", ("scale", "ordinal"), numeric=True),
+        ),
+        missing_strategy="listwise",
+        min_n=4,
+        assumptions=(
+            Assumption("normality", "變項近似常態分布", "可考慮 Spearman 等級相關（--option method=spearman）",
+                       when=(("method", "pearson"),)),
+        ),
+        options={"method": ("pearson", "spearman")},
     )
 )
 
