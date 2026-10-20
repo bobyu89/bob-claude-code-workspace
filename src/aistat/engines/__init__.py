@@ -5,9 +5,10 @@ from __future__ import annotations
 from ..errors import AistatError, EngineUnavailable
 from .base import EngineAdapter
 from .python_engine import PythonEngine
+from .r_engine import REngine
 
-ENGINES: dict[str, type[EngineAdapter]] = {"python": PythonEngine}
-AUTO_ORDER = ("python",)
+ENGINES: dict[str, type[EngineAdapter]] = {"r": REngine, "python": PythonEngine}
+AUTO_ORDER = ("r", "python")
 
 
 def get_engine(name: str = "auto") -> EngineAdapter:
