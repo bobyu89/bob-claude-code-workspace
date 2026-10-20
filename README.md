@@ -1,5 +1,7 @@
 # aistat：AI Statistical Platform
 
+[![tests](https://github.com/bobyu89/bob-claude-code-workspace/actions/workflows/tests.yml/badge.svg)](https://github.com/bobyu89/bob-claude-code-workspace/actions/workflows/tests.yml)
+
 開源、AI 原生的統計分析平台，給研究生、護理與醫療研究者、統計初學者使用。
 
 **Statistical Analysis Should Be Explainable, Reproducible, and Accessible.**
@@ -113,6 +115,8 @@ MCP 工具：`list_methods`、`list_datasets`、`inspect_dataset`、`get_data_di
 pip install -e ".[dev,mcp]"
 pytest                      # 沒有 R 時，R 相關測試自動略過
 ```
+
+GitHub Actions（`.github/workflows/tests.yml`）在每次 push 到 `main` 與每個 PR 時，以 Python 3.10 與 3.13 加上 R 執行全部測試；CI 設定 `AISTAT_REQUIRE_R=1`，缺少 R 時直接失敗，不會默默略過 R 與 Python 的交叉比對。
 
 測試以已知文獻值為 golden case（例如 R 官方 `sleep` 範例：t = 4.0621, df = 9, p = 0.002833），並交叉比對 R 與 Python 引擎（容許誤差 1e-6）。
 
