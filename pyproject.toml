@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aistat"
+version = "0.1.0"
+description = "Open-source AI-native statistical analysis platform: explainable, reproducible, accessible."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+    "scipy>=1.11",
+    "statsmodels>=0.14",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=2"]
+dev = ["pytest>=8", "jsonschema>=4"]
+
+[project.scripts]
+aistat = "aistat.cli:main"
+aistat-mcp = "aistat.mcp_server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aistat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["r: requires Rscript on PATH"]
