@@ -146,6 +146,9 @@ def _group_structure(plan, spec, complete, dictionary) -> Check:
         if spec.exact_groups is not None and k != spec.exact_groups:
             problems.append(f"{col} 有 {k} 組（{'、'.join(map(str, counts.index))}），"
                             f"{spec.name_zh}需要恰好 {spec.exact_groups} 組")
+        elif spec.min_groups is not None and k < spec.min_groups:
+            hint = f"；只有兩組時請改用 {spec.fewer_groups_method}" if spec.fewer_groups_method and k == 2 else ""
+            problems.append(f"{col} 只有 {k} 組，{spec.name_zh}需要至少 {spec.min_groups} 組{hint}")
         elif k < 2:
             problems.append(f"{col} 只有 {k} 個類別，無法比較")
         elif counts.min() < spec.min_per_group:
@@ -181,6 +184,7 @@ def _predictor_coding(plan, spec, complete, dictionary) -> Check:
 EXTRA_CHECKS: dict[str, tuple] = {
     "independent-t-test": (_group_structure,),
     "mann-whitney-u": (_group_structure,),
+    "one-way-anova": (_group_structure,),
     "chi-square": (_group_structure,),
     "fisher-exact": (_group_structure,),
     "correlation": (_correlation_type,),
@@ -415,7 +419,8 @@ def _effect_size_ci(text: str, effect) -> Check:
         return Check(GATE_B, "effect_size_ci", UNCERTAIN,
                      f"{effect.name} = {apa.num(effect.value)} 異常大，請確認資料是否有輸入錯誤或極端值", evidence,
                      "review_manually")
-    return Check(GATE_B, "effect_size_ci", YES, f"{effect.name} 與信賴區間已報告且合理", evidence)
+    reported = "與信賴區間" if effect.ci_lower is not None else ""
+    return Check(GATE_B, "effect_size_ci", YES, f"{effect.name}{reported}已報告且合理", evidence)
 
 
 def _causal_language(text: str, spec: MethodSpec) -> Check:
@@ -439,9 +444,10 @@ def _significance_consistency(text: str, primary_p: float | None, alpha: float) 
             claim = True
         else:
             continue
-        cited = {_p_is_significant(op, v, alpha) for op, v in P_TOKEN.findall(sentence)} - {None}
-        if len(cited) > 1:
-            continue  # the sentence cites several tests with different outcomes
+        tokens = P_TOKEN.findall(sentence)
+        cited = {_p_is_significant(op, v, alpha) for op, v in tokens} - {None}
+        if len(cited) > 1 or (tokens and not cited):
+            continue  # several tests with different outcomes, or only p values too rounded to settle it
         actual = cited.pop() if cited else (primary_p is not None and primary_p < alpha)
         if claim != actual:
             problems.append(sentence.strip())
@@ -457,6 +463,9 @@ def _p_is_significant(op: str, value: str, alpha: float) -> bool | None:
     except ValueError:
         return None
     if op == "=":
+        decimals = len(value.split(".")[1]) if "." in value else 0
+        if abs(v - alpha) < 0.5 * 10 ** -decimals:
+            return None  # e.g. p = .0497 printed as ".050": the rounded value cannot settle it
         return v < alpha
     if op in "<≤":
         return True if v <= alpha else None

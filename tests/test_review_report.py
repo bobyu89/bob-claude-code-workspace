@@ -154,3 +154,14 @@ def test_short_category_labels_do_not_corrupt_words(tmp_path):
 
     assert check(ws.review(run.id, draft=text), "significance_consistency").verdict == "NO"
     assert check(ws.review(run.id, lang="en"), "significance_consistency").verdict == "YES"
+
+
+@pytest.mark.parametrize("sentence,verdict", [
+    ("其中一項差異達統計顯著（p = .050）。", "YES"),   # p rounded to α: cannot be checked either way
+    ("其中一項差異未達統計顯著（p = .050）。", "YES"),
+    ("其中一項差異達統計顯著（p = .060）。", "NO"),
+])
+def test_p_values_that_round_to_alpha_are_not_judged(ws, run, sentence, verdict):
+    text = draft(ws, run) + "\n" + sentence + "\n"
+
+    assert check(ws.review(run.id, draft=text), "significance_consistency").verdict == verdict

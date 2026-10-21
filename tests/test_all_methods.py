@@ -15,6 +15,7 @@ CASES = [
     ("wilcoxon-signed-rank", "sleep_wide", {"before": "drug1", "after": "drug2"}, None),
     ("mann-whitney-u", "sleep_long", {"outcome": "extra", "group": "drug"}, None),
     ("fisher-exact", "tea_tasting", {"row": "guess", "column": "truth"}, None),
+    ("one-way-anova", "plant_growth", {"outcome": "weight", "group": "group"}, None),
 ]
 
 
@@ -22,7 +23,7 @@ CASES = [
 @pytest.mark.parametrize("method,dataset,variables,options", CASES)
 def test_generated_report_passes_gate_b(tmp_path, method, dataset, variables, options, lang):
     ws = make_workspace(tmp_path, "sleep_wide.csv", "sleep_long.csv", "textbook_xy.csv", "nurse_stress.csv",
-                        "wards.csv", "tea_tasting.csv")
+                        "wards.csv", "tea_tasting.csv", "plant_growth.csv")
     run, _ = run_analysis(ws, method, variables, "python", dataset_id=dataset, options=options)
 
     text = ws.report(run.id, lang=lang, mode="learning").read_text(encoding="utf-8")

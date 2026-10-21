@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 
 # 05：單因子 ANOVA
 
@@ -6,7 +6,7 @@ Status: ready-for-agent
 
 **相依（Blocked by）：** 04。
 
-- [ ] Gate A：3 組以上、每組至少 2 筆；兩組時判 NO 並建議 t 檢定
-- [ ] Welch ANOVA + Games-Howell 為主，傳統 F + Tukey HSD 為對照，η² 與 ω²
-- [ ] 各組 Shapiro-Wilk、Levene（informational）；常態不符時建議 Kruskal-Wallis
-- [ ] 與 R `PlantGrowth` 一致；R 與 Python 互相一致
+- [x] Gate A：3 組以上、每組至少 2 筆；兩組時判 NO 並建議 t 檢定
+- [x] Welch ANOVA + Games-Howell 為主，傳統 F + Tukey HSD 為對照，η² 與 ω²
+- [x] 各組 Shapiro-Wilk、Levene（informational）；常態不符時建議 Kruskal-Wallis
+- [x] 與 R `PlantGrowth` 一致；R 與 Python 互相一致

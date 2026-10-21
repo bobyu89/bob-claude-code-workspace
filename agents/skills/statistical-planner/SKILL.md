@@ -33,6 +33,7 @@ description: 依研究設計建立 aistat 分析計畫並解讀 JEV Gate A（YES
 | `wilcoxon-signed-rank` | `before`、`after` | — |
 | `mann-whitney-u` | `outcome`、`group` | — |
 | `fisher-exact` | `row`、`column`（皆二元） | — |
+| `one-way-anova` | `outcome`、`group`（3 組以上） | — |
 
 假設不符時，用 `create_analysis_plan(alternative_of="<RUN>")`（CLI：`aistat plan --alternative-of <RUN>`）建立替代計畫，不要自己重組變項。
 

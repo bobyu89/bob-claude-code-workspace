@@ -77,6 +77,63 @@ def quartiles(values, suffix):
 '''
 
 METHOD_CODE = {
+    "one-way-anova": '''
+y, g = V["outcome"], V["group"]
+d = df[[y, g]].dropna()
+L = PLAN["levels"][g]
+xs = [d.loc[d[g] == lvl, y].to_numpy(dtype=float) for lvl in L]
+k = len(xs)
+ns = np.array([len(x) for x in xs], dtype=float)
+N = int(ns.sum())
+means = np.array([x.mean() for x in xs])
+var = np.array([np.var(x, ddof=1) for x in xs])
+grand = np.concatenate(xs).mean()
+ss_b = float((ns * (means - grand) ** 2).sum())
+ss_w = float(((ns - 1) * var).sum())
+df_b, df_w = k - 1, N - k
+ms_w = ss_w / df_w
+f_c = (ss_b / df_b) / ms_w
+# Welch (1951) ANOVA, the same statistic as R's oneway.test(var.equal = FALSE)
+with np.errstate(divide="ignore", invalid="ignore"):
+    w = ns / var
+    W = w.sum()
+    mw = (w * means).sum() / W
+    tmp = (((1 - w / W) ** 2) / (ns - 1)).sum()
+    f_w = ((w * (means - mw) ** 2).sum() / (k - 1)) / (1 + 2 * (k - 2) / (k ** 2 - 1) * tmp)
+    df2_w = (k ** 2 - 1) / (3 * tmp)
+conf = O["conf_level"]
+crit_t = stats.studentized_range.ppf(conf, k, df_w)
+games_howell, tukey = [], []
+for i in range(k):
+    for j in range(i + 1, k):
+        diff = means[j] - means[i]  # later level minus earlier level, as R's TukeyHSD
+        vi, vj = var[i] / ns[i], var[j] / ns[j]
+        se = math.sqrt((vi + vj) / 2)
+        dfij = (vi + vj) ** 2 / (vi ** 2 / (ns[i] - 1) + vj ** 2 / (ns[j] - 1))
+        crit = stats.studentized_range.ppf(conf, k, dfij)
+        games_howell.append({"group1": L[i], "group2": L[j], "diff": diff, "se": se, "q": abs(diff) / se, "df": dfij,
+                             "p": stats.studentized_range.sf(abs(diff) / se, k, dfij),
+                             "ci_lower": diff - crit * se, "ci_upper": diff + crit * se})
+        se_t = math.sqrt(ms_w / 2 * (1 / ns[i] + 1 / ns[j]))
+        tukey.append({"group1": L[i], "group2": L[j], "diff": diff, "se": se_t, "q": abs(diff) / se_t,
+                      "p": stats.studentized_range.sf(abs(diff) / se_t, k, df_w),
+                      "ci_lower": diff - crit_t * se_t, "ci_upper": diff + crit_t * se_t})
+statistics = {
+    "n": N, "n_excluded": len(df) - N, "k": k,
+    "groups": [{"level": lvl, "n": int(n), "mean": m, "sd": math.sqrt(v)} for lvl, n, m, v in zip(L, ns, means, var)],
+    "welch": {"f": f_w, "df1": k - 1, "df2": df2_w, "p": stats.f.sf(f_w, k - 1, df2_w)},
+    "classic": {"f": f_c, "df1": df_b, "df2": df_w, "p": stats.f.sf(f_c, df_b, df_w),
+                "ss_between": ss_b, "ss_within": ss_w, "ss_total": ss_b + ss_w, "ms_within": ms_w},
+    "eta_squared": ss_b / (ss_b + ss_w),
+    "omega_squared": (ss_b - df_b * ms_w) / (ss_b + ss_w + ms_w),
+    "games_howell": games_howell, "tukey": tukey, "conf_level": conf,
+}
+lev = stats.levene(*xs, center="median")
+assumptions = [{**shapiro(x, "normality_by_group", f"{lvl} 組常態性"), "group": lvl} for lvl, x in zip(L, xs)]
+assumptions.append({"id": "homogeneity_of_variance", "label": "變異數同質性", "test": "Brown-Forsythe Levene",
+                    "statistic": lev.statistic, "p": lev.pvalue, "df1": df_b, "df2": df_w,
+                    "violated": bool(lev.pvalue < O["alpha"]), "informational": True})
+''',
     "fisher-exact": '''
 r, c = V["row"], V["column"]
 d = df[[r, c]].dropna()

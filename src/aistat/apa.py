@@ -33,7 +33,9 @@ def p_value(p: float | None) -> str:
     return "= " + bounded(p, 3)
 
 
-def df(x: float) -> str:
+def df(x: float | None) -> str:
+    if x is None:
+        return "NA"
     return str(int(round(x))) if abs(x - round(x)) < 1e-9 else num(x, 2)
 
 
