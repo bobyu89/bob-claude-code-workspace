@@ -37,13 +37,14 @@ description: 從研究問題與資料結構辨識研究設計（單組前後測�
 | 單組前後測（ordinal 或差值偏態） | 同上，分數為 ordinal 或差值不符常態 | `wilcoxon-signed-rank` |
 | 兩組比較 | 一個 scale 結果欄 + 一個兩組分組欄 | `independent-t-test` |
 | 兩組比較（ordinal 或偏態） | 一個 scale / ordinal 結果欄 + 兩組分組欄 | `mann-whitney-u` |
+| 三組以上比較 | 一個 scale 結果欄 + 三組以上的分組欄 | `one-way-anova` |
 | 兩類別變項關聯 | 兩個 nominal / ordinal 欄 | `chi-square` |
 | 兩個二元變項、樣本小 | 2 × 2 表、期望次數不足 | `fisher-exact` |
 | 兩連續變項關係 | 兩個 scale（或 ordinal）欄 | `correlation` |
 | 預測 | 一個 scale 依變項 + 一或多個預測變項 | `linear-regression` |
 | 樣本描述 | 任意變項 | `descriptives` |
 
-三組以上比較（ANOVA）、重複量數、混合模型、存活分析目前不支援：如實告知，不要硬套。
+重複量數、多因子 ANOVA、混合模型、存活分析、Kruskal-Wallis 目前不支援：如實告知，不要硬套。
 
 ## 禁止事項
 

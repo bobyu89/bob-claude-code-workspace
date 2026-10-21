@@ -146,6 +146,9 @@ def _group_structure(plan, spec, complete, dictionary) -> Check:
         if spec.exact_groups is not None and k != spec.exact_groups:
             problems.append(f"{col} 有 {k} 組（{'、'.join(map(str, counts.index))}），"
                             f"{spec.name_zh}需要恰好 {spec.exact_groups} 組")
+        elif spec.min_groups is not None and k < spec.min_groups:
+            hint = f"；只有兩組時請改用 {spec.fewer_groups_method}" if spec.fewer_groups_method and k == 2 else ""
+            problems.append(f"{col} 只有 {k} 組，{spec.name_zh}需要至少 {spec.min_groups} 組{hint}")
         elif k < 2:
             problems.append(f"{col} 只有 {k} 個類別，無法比較")
         elif counts.min() < spec.min_per_group:
@@ -181,6 +184,7 @@ def _predictor_coding(plan, spec, complete, dictionary) -> Check:
 EXTRA_CHECKS: dict[str, tuple] = {
     "independent-t-test": (_group_structure,),
     "mann-whitney-u": (_group_structure,),
+    "one-way-anova": (_group_structure,),
     "chi-square": (_group_structure,),
     "fisher-exact": (_group_structure,),
     "correlation": (_correlation_type,),

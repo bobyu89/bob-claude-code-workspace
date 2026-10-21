@@ -39,6 +39,7 @@
         "wilcoxon-signed-rank",
         "independent-t-test",
         "mann-whitney-u",
+        "one-way-anova",
         "chi-square",
         "fisher-exact",
         "correlation",

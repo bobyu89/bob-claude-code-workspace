@@ -55,6 +55,7 @@ aistat export RUN_20261020_001               # zip 成果包，預設不含資�
 | `descriptives` | `variables=a,b,c` | n、缺失、M、SD、Mdn、Q1–Q3、範圍；類別次數與百分比 |
 | `paired-t-test` | `before`、`after` | 平均差、CI、t、df、p、Cohen's d_z；差值 Shapiro-Wilk |
 | `independent-t-test` | `outcome`、`group` | Welch 與 Student t、CI、Cohen's d；各組常態性、Brown-Forsythe Levene |
+| `one-way-anova` | `outcome`、`group`（3 組以上） | Welch ANOVA + Games-Howell；傳統 F + Tukey HSD 對照；η²、ω²；各組常態性、Levene |
 | `chi-square` | `row`、`column` | Pearson χ²、Cramér's V、交叉表；期望次數檢查 |
 | `correlation` | `x`、`y`（`--option method=spearman`） | r / r_s、t、p、Fisher z CI；常態性 |
 | `linear-regression` | `outcome`、`predictors=a,b` | B、SE、β、t、p、CI；R²、F；殘差常態、Breusch-Pagan、VIF |

@@ -57,6 +57,8 @@ class MethodSpec:
     string_roles: tuple[str, ...] = ()  # roles read as text; their levels are fixed in the plan
     per_predictor_n: int = 0  # recommended cases per variable in a multiple role (rule of thumb)
     exact_groups: int | None = None  # categorical roles must have exactly this many levels
+    min_groups: int | None = None  # categorical roles need at least this many levels
+    fewer_groups_method: str | None = None  # method to suggest when there are fewer levels than min_groups
     min_per_group: int = 1  # minimum valid cases per level of a categorical role
     text_unless_scale: bool = False  # read every non-scale variable of the multiple role as text (descriptives)
     alternative: Alternative | None = None
@@ -170,6 +172,31 @@ _register(
         exact_groups=2,
         min_per_group=2,
         no_assumption_note="以等級計算，不需要常態假設；假設觀察值互相獨立",
+    )
+)
+
+_register(
+    MethodSpec(
+        id="one-way-anova",
+        name_zh="單因子變異數分析",
+        name_en="one-way analysis of variance",
+        roles=(
+            Role("outcome", "結果變項", ("scale",), numeric=True),
+            Role("group", "分組變項", ("nominal", "ordinal")),
+        ),
+        missing_strategy="listwise",
+        min_n=6,
+        assumptions=(
+            Assumption("normality_by_group", "各組結果變項近似常態分布",
+                       "可考慮 Kruskal-Wallis test（本平台尚未支援；各組樣本數大時 ANOVA 較穩健）"),
+            Assumption("homogeneity_of_variance", "各組變異數相等",
+                       "報告以 Welch ANOVA 與 Games-Howell 為主，不需假設變異數相等"),
+        ),
+        design_checks=("independence",),
+        string_roles=("group",),
+        min_groups=3,
+        fewer_groups_method="independent-t-test",
+        min_per_group=2,
     )
 )
 

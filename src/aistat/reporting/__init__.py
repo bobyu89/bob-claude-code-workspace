@@ -10,6 +10,7 @@ from __future__ import annotations
 from .. import apa
 from ..methods import MethodSpec, alternative_command
 from ..validation import UNCERTAIN
+from .anova import AnovaReport
 from .association import CorrelationReport, RegressionReport
 from .categorical import ChiSquareReport, FisherReport
 from .common import ALTERNATIVES_EN, Effect
@@ -31,6 +32,7 @@ REPORTS = {
     "wilcoxon-signed-rank": WilcoxonReport(),
     "independent-t-test": IndependentReport(),
     "mann-whitney-u": MannWhitneyReport(),
+    "one-way-anova": AnovaReport(),
     "chi-square": ChiSquareReport(),
     "fisher-exact": FisherReport(),
     "correlation": CorrelationReport(),

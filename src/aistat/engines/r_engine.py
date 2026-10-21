@@ -84,6 +84,66 @@ quartiles <- function(values, suffix) {
 '''
 
 METHOD_CODE = {
+    "one-way-anova": r'''
+y <- V$outcome
+g <- V$group
+d <- df[complete.cases(df[, c(y, g)]), c(y, g), drop = FALSE]
+L <- unlist(PLAN$levels[[g]])
+xs <- lapply(L, function(lvl) as.numeric(d[[y]][d[[g]] == lvl]))
+k <- length(xs)
+ns <- vapply(xs, length, 0)
+N <- sum(ns)
+means <- vapply(xs, mean, 0)
+vars <- vapply(xs, var, 0)
+yy <- unlist(xs)
+gg <- factor(rep(L, ns), levels = L)
+a <- anova(lm(yy ~ gg))
+ss_b <- a[["Sum Sq"]][1]
+ss_w <- a[["Sum Sq"]][2]
+df_b <- k - 1
+df_w <- N - k
+ms_w <- ss_w / df_w
+wt <- oneway.test(yy ~ gg, var.equal = FALSE)  # Welch (1951)
+th <- TukeyHSD(aov(yy ~ gg), conf.level = O$conf_level)$gg
+conf <- O$conf_level
+games_howell <- list()
+tukey <- list()
+row <- 0
+for (i in 1:(k - 1)) for (j in (i + 1):k) {
+  row <- row + 1
+  diff <- means[j] - means[i]  # later level minus earlier level, as TukeyHSD
+  vi <- vars[i] / ns[i]
+  vj <- vars[j] / ns[j]
+  se <- sqrt((vi + vj) / 2)
+  dfij <- (vi + vj)^2 / (vi^2 / (ns[i] - 1) + vj^2 / (ns[j] - 1))
+  crit <- qtukey(conf, k, dfij)
+  games_howell[[row]] <- list(group1 = L[i], group2 = L[j], diff = diff, se = se, q = abs(diff) / se, df = dfij,
+                              p = ptukey(abs(diff) / se, k, dfij, lower.tail = FALSE),
+                              ci_lower = diff - crit * se, ci_upper = diff + crit * se)
+  se_t <- sqrt(ms_w / 2 * (1 / ns[i] + 1 / ns[j]))
+  tukey[[row]] <- list(group1 = L[i], group2 = L[j], diff = unname(th[row, "diff"]), se = se_t,
+                       q = abs(diff) / se_t, p = unname(th[row, "p adj"]),
+                       ci_lower = unname(th[row, "lwr"]), ci_upper = unname(th[row, "upr"]))
+}
+statistics <- list(
+  n = N, n_excluded = nrow(df) - N, k = k,
+  groups = lapply(seq_len(k), function(i) list(level = L[i], n = ns[i], mean = means[i], sd = sqrt(vars[i]))),
+  welch = list(f = unname(wt$statistic), df1 = unname(wt$parameter[1]), df2 = unname(wt$parameter[2]), p = wt$p.value),
+  classic = list(f = a[["F value"]][1], df1 = df_b, df2 = df_w, p = a[["Pr(>F)"]][1],
+                 ss_between = ss_b, ss_within = ss_w, ss_total = ss_b + ss_w, ms_within = ms_w),
+  eta_squared = ss_b / (ss_b + ss_w),
+  omega_squared = (ss_b - df_b * ms_w) / (ss_b + ss_w + ms_w),
+  games_howell = games_howell, tukey = tukey, conf_level = conf
+)
+# Brown-Forsythe variant of Levene's test: one-way ANOVA on absolute deviations from group medians.
+z <- abs(yy - ave(yy, gg, FUN = median))
+lev <- anova(lm(z ~ gg))
+assumptions <- lapply(seq_len(k), function(i) c(shapiro(xs[[i]], "normality_by_group", paste0(L[i], " 組常態性")),
+                                                list(group = L[i])))
+assumptions[[k + 1]] <- list(id = "homogeneity_of_variance", label = "變異數同質性", test = "Brown-Forsythe Levene",
+                             statistic = lev[["F value"]][1], p = lev[["Pr(>F)"]][1], df1 = df_b, df2 = df_w,
+                             violated = lev[["Pr(>F)"]][1] < O$alpha, informational = TRUE)
+''',
     "fisher-exact": r'''
 rv <- V$row
 cv <- V$column
