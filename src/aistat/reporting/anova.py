@@ -28,8 +28,17 @@ def posthoc_table(rows: list[dict], conf_level: float, lang: str) -> str:
     return "\n".join(lines)
 
 
+def welch_available(s: dict) -> bool:
+    """Welch's ANOVA is undefined when a group has zero variance; the classic F test then leads."""
+    return s["welch"]["f"] is not None and s["welch"]["p"] is not None
+
+
 def posthoc_sentence(rows: list[dict], alpha: float, lang: str) -> str:
     """Every claim cites its own p values, so Gate B checks each sentence against them."""
+    rows = [r for r in rows if r["p"] is not None]
+    if not rows:
+        return ("事後比較無法計算（組內變異數為零）。" if lang == "zh"
+                else "Post hoc comparisons could not be computed (zero within-group variance).")
     sig = [r for r in rows if apa.significant(r["p"], alpha)]
     if lang == "zh":
         if sig:
@@ -45,12 +54,14 @@ def posthoc_sentence(rows: list[dict], alpha: float, lang: str) -> str:
 
 class AnovaReport:
     def headline(self, plan, s) -> str:
+        if not welch_available(s):
+            return self.classic_line(s)
         w = s["welch"]
         return (f"Welch F({apa.df(w['df1'])}, {apa.df(w['df2'])}) = {apa.num(w['f'])}, p {apa.p_value(w['p'])}, "
                 f"ω² = {apa.bounded(s['omega_squared'])}")
 
     def primary_p(self, s) -> float | None:
-        return s["welch"]["p"]
+        return s["welch"]["p"] if welch_available(s) else s["classic"]["p"]
 
     def effect(self, s) -> Effect:
         return Effect("ω²", s["omega_squared"], implausible_above=None)
@@ -65,30 +76,46 @@ class AnovaReport:
         o = plan["options"]
         w = s["welch"]
         welch = f"Welch F({apa.df(w['df1'])}, {apa.df(w['df2'])}) = {apa.num(w['f'])}, p {apa.p_value(w['p'])}"
-        if lang == "zh":
+        primary = self.primary_p(s)
+        posthoc = s["games_howell"] if welch_available(s) else s["tukey"]
+        zh = lang == "zh"
+        if zh:
             groups = "、".join(f"{x['level']}（n = {x['n']}, M = {apa.num(x['mean'])}, SD = {apa.num(x['sd'])}）"
                               for x in s["groups"])
             dropped = f"，排除 {s['n_excluded']} 筆缺失" if s["n_excluded"] else ""
-            return (f"以單因子變異數分析比較 {g} 各組的 {y}（n = {s['n']}{dropped}）。各組為 {groups}。"
-                    f"Welch ANOVA（不假設各組變異數相等）結果為 {welch}。"
-                    + significance_sentence(w["p"], o["alpha"], "zh", "組間差異")
-                    + f"傳統 F 檢定供對照：{self.classic_line(s)}，{omega_label(s['omega_squared'], 'zh')}。"
+            if welch_available(s):
+                main = (f"Welch ANOVA（不假設各組變異數相等）結果為 {welch}。"
+                        + significance_sentence(primary, o["alpha"], "zh", "組間差異")
+                        + f"傳統 F 檢定供對照：{self.classic_line(s)}，{omega_label(s['omega_squared'], 'zh')}。")
+            else:
+                main = ("Welch ANOVA 無法計算（至少一組的變異數為零），以下以傳統 F 檢定為主："
+                        f"{self.classic_line(s)}。"
+                        + significance_sentence(primary, o["alpha"], "zh", "組間差異")
+                        + f"{omega_label(s['omega_squared'], 'zh')}。")
+            return (f"以單因子變異數分析比較 {g} 各組的 {y}（n = {s['n']}{dropped}）。各組為 {groups}。" + main
                     + "\n\nGames-Howell 事後比較：\n\n" + posthoc_table(s["games_howell"], s["conf_level"], "zh")
-                    + "\n\n" + posthoc_sentence(s["games_howell"], o["alpha"], "zh")
                     + "\n\nTukey HSD 事後比較（假設變異數相等，供對照）：\n\n"
-                    + posthoc_table(s["tukey"], s["conf_level"], "zh"))
+                    + posthoc_table(s["tukey"], s["conf_level"], "zh")
+                    + "\n\n" + posthoc_sentence(posthoc, o["alpha"], "zh"))
         groups = "; ".join(f"{x['level']} (n = {x['n']}, M = {apa.num(x['mean'])}, SD = {apa.num(x['sd'])})"
                            for x in s["groups"])
         dropped = f"; {s['n_excluded']} cases with missing values excluded" if s["n_excluded"] else ""
-        return (f"A one-way analysis of variance compared {y} across the {g} groups (n = {s['n']}{dropped}): {groups}. "
-                f"Welch's ANOVA, which does not assume equal variances, gave {welch}. "
-                + significance_sentence(w["p"], o["alpha"], "en", subject_en="The group difference")
-                + f" For comparison, the classic F test gave {self.classic_line(s)}; this is "
-                + f"{omega_label(s['omega_squared'], 'en')}."
+        if welch_available(s):
+            main = (f"Welch's ANOVA, which does not assume equal variances, gave {welch}. "
+                    + significance_sentence(primary, o["alpha"], "en", subject_en="The group difference")
+                    + f" For comparison, the classic F test gave {self.classic_line(s)}; this is "
+                    + f"{omega_label(s['omega_squared'], 'en')}.")
+        else:
+            main = ("Welch's ANOVA could not be computed (at least one group has zero variance), so the classic F "
+                    f"test is reported: {self.classic_line(s)}. "
+                    + significance_sentence(primary, o["alpha"], "en", subject_en="The group difference")
+                    + f" This is {omega_label(s['omega_squared'], 'en')}.")
+        return (f"A one-way analysis of variance compared {y} across levels of {g} (n = {s['n']}{dropped}): {groups}. "
+                + main
                 + "\n\nGames-Howell post hoc comparisons:\n\n" + posthoc_table(s["games_howell"], s["conf_level"], "en")
-                + "\n\n" + posthoc_sentence(s["games_howell"], o["alpha"], "en")
                 + "\n\nTukey HSD post hoc comparisons (equal variances assumed, for comparison):\n\n"
-                + posthoc_table(s["tukey"], s["conf_level"], "en"))
+                + posthoc_table(s["tukey"], s["conf_level"], "en")
+                + "\n\n" + posthoc_sentence(posthoc, o["alpha"], "en"))
 
     def limitations(self, lang) -> str:
         if lang == "zh":
@@ -101,8 +128,8 @@ class AnovaReport:
     def learning(self, plan, results, spec: MethodSpec) -> str:
         s, a = results["statistics"], results["assumptions"]
         y, g = plan["variables"]["outcome"], plan["variables"]["group"]
-        w = s["welch"]
-        sig = apa.significant(w["p"], plan["options"]["alpha"])
+        sig = apa.significant(self.primary_p(s), plan["options"]["alpha"])
+        posthoc = s["games_howell"] if welch_available(s) else s["tukey"]
         levels = "、".join(f"`{x['level']}`" for x in s["groups"])
         normal = "\n".join(
             f"- `{x['group']}` 組：" + ("無法檢定（樣本數或變異不足）" if x.get("violated") is None else
@@ -144,6 +171,6 @@ class AnovaReport:
 
 ## 6. 這個結果可以支持什麼結論？
 
-- 可以說：各組 `{y}` 的差異{'達' if sig else '未達'}統計顯著（{self.headline(plan, s)}）；{posthoc_sentence(s['games_howell'], plan['options']['alpha'], 'zh')}
+- 可以說：各組 `{y}` 的差異{'達' if sig else '未達'}統計顯著（{self.headline(plan, s)}）；{posthoc_sentence(posthoc, plan['options']['alpha'], 'zh')}
 - 不能說：分組「造成」差異，除非組別是隨機分派。
 """

@@ -45,23 +45,42 @@ def test_plant_growth_matches_r_documentation(ws, engine):
     assert len(s["games_howell"]) == 3
 
 
-def test_games_howell_matches_hand_computation(ws):
-    # trt1 vs trt2 from the group summaries (Welch-type SE and df, studentized range p).
-    import math
+@pytest.mark.parametrize("engine", ["python", pytest.param("r", marks=requires_r)])
+def test_games_howell_matches_an_independent_implementation(ws, engine):
+    # pingouin.pairwise_gameshowell on PlantGrowth (computed once, independent code base):
+    # ctrl–trt1 p = .4745549222, df = 16.5235851; ctrl–trt2 p = .1128891769; trt1–trt2 p = .0237034547, df = 14.1035691.
+    # rstatix reports trt2 − trt1 95% CI [0.114, 1.62].
+    _, res = run_analysis(ws, "one-way-anova", VARS, engine, dataset_id="plant_growth")
 
-    from scipy import stats as st
+    gh = res["statistics"]["games_howell"]
+    assert pair(gh, "ctrl", "trt1")["p"] == pytest.approx(0.4745549222, abs=1e-6)
+    assert pair(gh, "ctrl", "trt1")["df"] == pytest.approx(16.5235850569, abs=1e-8)
+    assert pair(gh, "ctrl", "trt2")["p"] == pytest.approx(0.1128891769, abs=1e-6)
+    t12 = pair(gh, "trt1", "trt2")
+    assert t12["p"] == pytest.approx(0.0237034547, abs=1e-6)
+    assert t12["df"] == pytest.approx(14.1035691228, abs=1e-8)
+    assert (t12["ci_lower"], t12["ci_upper"]) == pytest.approx((0.114, 1.62), abs=5e-3)
 
+
+def test_effect_sizes_match_hand_computation(ws):
+    # R anova(): SS_between = 3.76634, SS_within = 10.49209, df_within = 27 → MS_within = 0.388596.
     _, res = run_analysis(ws, "one-way-anova", VARS, "python", dataset_id="plant_growth")
+
     s = res["statistics"]
-    g = {x["level"]: x for x in s["groups"]}
-    a, b = g["trt1"], g["trt2"]
-    va, vb = a["sd"] ** 2 / a["n"], b["sd"] ** 2 / b["n"]
-    se = math.sqrt((va + vb) / 2)
-    df = (va + vb) ** 2 / (va ** 2 / (a["n"] - 1) + vb ** 2 / (b["n"] - 1))
-    gh = pair(s["games_howell"], "trt1", "trt2")
-    assert gh["diff"] == pytest.approx(b["mean"] - a["mean"], abs=1e-12)
-    assert gh["df"] == pytest.approx(df, rel=1e-12)
-    assert gh["p"] == pytest.approx(st.studentized_range.sf(abs(gh["diff"]) / se, 3, df), rel=1e-9)
+    assert s["eta_squared"] == pytest.approx(0.2641482968, abs=1e-6)  # also pingouin's np2
+    assert s["omega_squared"] == pytest.approx(0.204079, abs=1e-5)
+
+
+@pytest.mark.parametrize("engine", ["python", pytest.param("r", marks=requires_r)])
+def test_zero_variance_group_falls_back_to_classic_f(ws, tmp_path, engine):
+    write_dataset(ws, tmp_path, "flat.csv", "y,g\n5,a\n5,a\n5,a\n1,b\n2,b\n3,b\n4,c\n6,c\n8,c\n")
+
+    run, res = run_analysis(ws, "one-way-anova", {"outcome": "y", "group": "g"}, engine, dataset_id="flat")
+    text = ws.report(run.id).read_text(encoding="utf-8")
+
+    assert res["statistics"]["welch"]["p"] is None
+    assert "無法計算" in text and "F(2, 6)" in text
+    assert not ws.review(run.id, draft=text).by_verdict("NO")
 
 
 @requires_r
@@ -92,7 +111,7 @@ def test_groups_need_two_cases_each(ws, tmp_path):
 def test_no_alternative_plan_yet(ws):
     run = ws.create_plan("one-way-anova", VARS, dataset_id="plant_growth")
 
-    with pytest.raises(PlanError, match="替代"):
+    with pytest.raises(PlanError, match="Kruskal-Wallis.*尚未支援"):
         ws.create_alternative_plan(run.id)
 
 

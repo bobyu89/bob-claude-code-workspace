@@ -102,6 +102,7 @@ with np.errstate(divide="ignore", invalid="ignore"):
     f_w = ((w * (means - mw) ** 2).sum() / (k - 1)) / (1 + 2 * (k - 2) / (k ** 2 - 1) * tmp)
     df2_w = (k ** 2 - 1) / (3 * tmp)
 conf = O["conf_level"]
+crit_t = stats.studentized_range.ppf(conf, k, df_w)
 games_howell, tukey = [], []
 for i in range(k):
     for j in range(i + 1, k):
@@ -114,7 +115,6 @@ for i in range(k):
                              "p": stats.studentized_range.sf(abs(diff) / se, k, dfij),
                              "ci_lower": diff - crit * se, "ci_upper": diff + crit * se})
         se_t = math.sqrt(ms_w / 2 * (1 / ns[i] + 1 / ns[j]))
-        crit_t = stats.studentized_range.ppf(conf, k, df_w)
         tukey.append({"group1": L[i], "group2": L[j], "diff": diff, "se": se_t, "q": abs(diff) / se_t,
                       "p": stats.studentized_range.sf(abs(diff) / se_t, k, df_w),
                       "ci_lower": diff - crit_t * se_t, "ci_upper": diff + crit_t * se_t})

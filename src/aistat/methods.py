@@ -41,6 +41,7 @@ class Alternative:
     options: tuple[tuple[str, str], ...] = ()  # option overrides for the new plan
     requires: tuple[tuple[str, str], ...] = ()  # only offered when the original plan has these options
     two_by_two: bool = False  # only offered when every categorical role has exactly two levels
+    not_yet_supported: str | None = None  # display name of an alternative aistat cannot run yet
 
 
 @dataclass(frozen=True)
@@ -197,6 +198,7 @@ _register(
         min_groups=3,
         fewer_groups_method="independent-t-test",
         min_per_group=2,
+        alternative=Alternative("kruskal-wallis", not_yet_supported="Kruskal-Wallis test"),
     )
 )
 
@@ -292,6 +294,9 @@ def alternative_for(plan: dict) -> tuple[str, dict]:
     alt = spec.alternative
     if alt is None or any(plan["options"].get(k) != v for k, v in alt.requires):
         raise PlanError(f"{spec.name_zh}（{plan['method']}）沒有對應的替代方法。")
+    if alt.not_yet_supported:
+        raise PlanError(f"{spec.name_zh}的替代方法 {alt.not_yet_supported} 本平台尚未支援，"
+                        "請另以其他統計軟體執行，或改用目前的分析並在報告中說明假設不符。")
     if alt.two_by_two:
         shape = [len(plan["levels"].get(plan["variables"][r], [])) for r in spec.string_roles]
         if shape != [2, 2]:

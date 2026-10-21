@@ -122,7 +122,7 @@ for (i in 1:(k - 1)) for (j in (i + 1):k) {
                               ci_lower = diff - crit * se, ci_upper = diff + crit * se)
   se_t <- sqrt(ms_w / 2 * (1 / ns[i] + 1 / ns[j]))
   tukey[[row]] <- list(group1 = L[i], group2 = L[j], diff = unname(th[row, "diff"]), se = se_t,
-                       q = abs(diff) / se_t, p = unname(th[row, "p adj"]),
+                       q = abs(unname(th[row, "diff"])) / se_t, p = unname(th[row, "p adj"]),
                        ci_lower = unname(th[row, "lwr"]), ci_upper = unname(th[row, "upr"]))
 }
 statistics <- list(
