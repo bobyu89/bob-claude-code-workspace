@@ -8,12 +8,13 @@ method family holds the wording; this module holds the shared report layout.
 from __future__ import annotations
 
 from .. import apa
-from ..methods import MethodSpec
+from ..methods import MethodSpec, alternative_command
 from ..validation import UNCERTAIN
 from .association import CorrelationReport, RegressionReport
-from .categorical import ChiSquareReport
+from .categorical import ChiSquareReport, FisherReport
 from .common import ALTERNATIVES_EN, Effect
 from .descriptives import DescriptivesReport
+from .nonparametric import MannWhitneyReport, WilcoxonReport
 from .ttests import IndependentReport, PairedReport
 
 JEV_HEADING = "## JEV 審查紀錄（JEV Review）"
@@ -27,8 +28,11 @@ DISCLAIMER = {
 REPORTS = {
     "descriptives": DescriptivesReport(),
     "paired-t-test": PairedReport(),
+    "wilcoxon-signed-rank": WilcoxonReport(),
     "independent-t-test": IndependentReport(),
+    "mann-whitney-u": MannWhitneyReport(),
     "chi-square": ChiSquareReport(),
+    "fisher-exact": FisherReport(),
     "correlation": CorrelationReport(),
     "linear-regression": RegressionReport(),
 }
@@ -46,8 +50,9 @@ def headline(plan: dict, results: dict) -> str:
     return method_report(plan["method"]).headline(plan, results["statistics"])
 
 
-def assumption_lines(results: dict, spec: MethodSpec, lang: str) -> list[str]:
+def assumption_lines(results: dict, spec: MethodSpec, lang: str, plan: dict) -> list[str]:
     alternatives = {a.id: a.alternative for a in spec.assumptions}
+    command = alternative_command(plan)
     lines = []
     for a in results.get("assumptions", []):
         group = f" [{a.get('group') or a.get('variable')}]" if a.get("group") or a.get("variable") else ""
@@ -68,6 +73,8 @@ def assumption_lines(results: dict, spec: MethodSpec, lang: str) -> list[str]:
         elif a["violated"]:
             verdict = (f"未符合；{alternatives.get(a['id'], '請考慮其他方法')}" if lang == "zh"
                        else f"not met; {ALTERNATIVES_EN.get(a['id'], 'consider an alternative method')}")
+            if command and not a.get("informational"):
+                verdict += (f"（替代計畫：`{command}`）" if lang == "zh" else f" (alternative plan: `{command}`)")
         else:
             verdict = "符合" if lang == "zh" else "met"
         sep = "：" if lang == "zh" else ": "
@@ -93,7 +100,7 @@ def build_draft(plan: dict, results: dict, spec: MethodSpec, lang: str = "zh") -
         r.paragraph(plan, results["statistics"], lang),
         "",
     ]
-    assumptions = assumption_lines(results, spec, lang)
+    assumptions = assumption_lines(results, spec, lang, plan)
     if assumptions:
         lines += ["## 統計假設檢查（Assumption Checks）" if zh else "## Assumption Checks", "", *assumptions, ""]
     lines += ["## 研究限制（Limitations）" if zh else "## Limitations", "", r.limitations(lang), ""]

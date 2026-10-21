@@ -76,7 +76,105 @@ dir.create(dirname(OUT), showWarnings = FALSE, recursive = TRUE)
 writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
 '''
 
+QUARTILES = r'''
+quartiles <- function(values, suffix) {
+  q <- unname(quantile(as.numeric(values), c(0.25, 0.5, 0.75), type = 7))
+  setNames(list(q[2], q[1], q[3]), paste0(c("median_", "q1_", "q3_"), suffix))
+}
+'''
+
 METHOD_CODE = {
+    "fisher-exact": r'''
+rv <- V$row
+cv <- V$column
+d <- df[complete.cases(df[, c(rv, cv)]), c(rv, cv), drop = FALSE]
+RL <- unlist(PLAN$levels[[rv]])
+CL <- unlist(PLAN$levels[[cv]])
+obs <- table(factor(d[[rv]], levels = RL), factor(d[[cv]], levels = CL))
+a <- obs[1, 1]; b <- obs[1, 2]; cc <- obs[2, 1]; dd <- obs[2, 2]
+m <- a + b; n <- cc + dd; k <- a + cc
+lo <- max(0, k - n); hi <- min(k, m)
+support <- lo:hi
+log_base <- dhyper(support, m, n, k, log = TRUE)
+dist <- function(theta) {  # noncentral hypergeometric with odds ratio exp(theta)
+  w <- log_base + theta * support
+  w <- exp(w - max(w))
+  w / sum(w)
+}
+solve <- function(f, target) {  # f increasing in theta; plain bisection, identical to the Python engine
+  lo_t <- -100; hi_t <- 100
+  for (i in 1:200) {
+    mid <- (lo_t + hi_t) / 2
+    if (f(mid) < target) lo_t <- mid else hi_t <- mid
+  }
+  exp((lo_t + hi_t) / 2)
+}
+tail <- (1 - O$conf_level) / 2
+estimate <- if (a == lo) 0 else if (a == hi) NULL else solve(function(t) sum(support * dist(t)), a)
+ci_lower <- if (a == lo) 0 else solve(function(t) sum(dist(t)[support >= a]), tail)
+ci_upper <- if (a == hi) NULL else solve(function(t) -sum(dist(t)[support <= a]), -tail)
+rows <- function(mat) lapply(seq_len(nrow(mat)), function(i) as.list(unname(as.numeric(mat[i, ]))))
+statistics <- list(
+  n = sum(obs), n_excluded = nrow(df) - sum(obs),
+  row_levels = as.list(RL), column_levels = as.list(CL), observed = rows(obs),
+  row_proportions = rows(prop.table(obs, 1)),
+  p = fisher.test(obs)$p.value,
+  odds_ratio = estimate, ci_lower = ci_lower, ci_upper = ci_upper,
+  odds_ratio_infinite = (a == hi), ci_upper_infinite = (a == hi), conf_level = O$conf_level
+)
+''',
+    "mann-whitney-u": r'''
+y <- V$outcome
+g <- V$group
+d <- df[complete.cases(df[, c(y, g)]), c(y, g), drop = FALSE]
+L <- unlist(PLAN$levels[[g]])
+x1 <- as.numeric(d[[y]][d[[g]] == L[1]])
+x2 <- as.numeric(d[[y]][d[[g]] == L[2]])
+n1 <- length(x1)
+n2 <- length(x2)
+N <- n1 + n2
+counts <- rle(sort(c(x1, x2)))$lengths
+exact <- N <= 50 && all(counts == 1)
+wt <- suppressWarnings(wilcox.test(x1, x2, exact = exact, correct = TRUE))
+u <- unname(wt$statistic)  # U for the first group
+# Effect size from the tie-corrected normal approximation without continuity correction.
+sigma <- sqrt(n1 * n2 / 12 * ((N + 1) - sum(counts^3 - counts) / (N * (N - 1))))
+z <- if (sigma > 0) (u - n1 * n2 / 2) / sigma else NULL
+group <- function(level, x) {
+  q <- unname(quantile(x, c(0.25, 0.5, 0.75), type = 7))
+  list(level = level, n = length(x), median = q[2], q1 = q[1], q3 = q[3])
+}
+statistics <- list(
+  n = N, n_excluded = nrow(df) - N, groups = list(group(L[1], x1), group(L[2], x2)),
+  exact = exact, u = u, p = wt$p.value, z = z, r = if (is.null(z)) NULL else z / sqrt(N),
+  rank_biserial = 2 * u / (n1 * n2) - 1
+)
+''',
+    "wilcoxon-signed-rank": QUARTILES + r'''
+d <- df[complete.cases(df[, c(V$before, V$after)]), c(V$before, V$after), drop = FALSE]
+before <- as.numeric(d[[V$before]])
+after <- as.numeric(d[[V$after]])
+diffs <- round(after - before, 12)  # Python rounds the same way, so float noise never splits a tie
+nz <- diffs[diffs != 0]  # Wilcoxon's method: zero differences are dropped
+n <- length(nz)
+if (n == 0) stop("所有配對的差值都為零，無法進行 Wilcoxon signed-rank test。")
+rk <- rank(abs(nz))
+w_plus <- sum(rk[nz > 0])
+w_minus <- sum(rk[nz < 0])
+counts <- rle(sort(abs(nz)))$lengths
+exact <- n <= 50 && all(counts == 1)
+wt <- suppressWarnings(wilcox.test(nz, mu = 0, exact = exact, correct = TRUE))
+# Effect size from the tie-corrected normal approximation without continuity correction.
+sigma <- sqrt(n * (n + 1) * (2 * n + 1) / 24 - sum(counts^3 - counts) / 48)
+z <- if (sigma > 0) (w_plus - n * (n + 1) / 4) / sigma else NULL
+statistics <- c(
+  list(n = n, n_pairs = length(diffs), n_zero = length(diffs) - n, n_excluded = nrow(df) - length(diffs),
+       exact = exact, w_plus = w_plus, w_minus = w_minus, p = wt$p.value,
+       z = z, r = if (is.null(z)) NULL else z / sqrt(n),
+       rank_biserial = (w_plus - w_minus) / (w_plus + w_minus)),
+  quartiles(before, "before"), quartiles(after, "after"), quartiles(diffs, "diff")
+)
+''',
     "descriptives": r'''
 summaries <- lapply(unlist(V$variables), function(name) {
   col <- df[[name]]

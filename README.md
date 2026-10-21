@@ -44,6 +44,8 @@ aistat rerun RUN_20261020_001                # 重新執行並核對輸出
 aistat export RUN_20261020_001               # zip 成果包，預設不含資料（--include-data）
 ```
 
+統計假設不符時，`aistat plan --alternative-of <RUN>` 會沿用同一組變項建立替代方法的新計畫（例如配對 t → Wilcoxon、獨立 t → Mann-Whitney、2 × 2 卡方 → Fisher、Pearson → Spearman），新計畫一樣要通過 Gate A 並經研究者核准。
+
 其他指令：`aistat datasets`、`aistat runs`、`aistat status <RUN>`、`aistat validate <RUN>`、`aistat cancel <RUN>`、`aistat dictionary export`。
 
 ## 支援的方法
@@ -56,6 +58,9 @@ aistat export RUN_20261020_001               # zip 成果包，預設不含資�
 | `chi-square` | `row`、`column` | Pearson χ²、Cramér's V、交叉表；期望次數檢查 |
 | `correlation` | `x`、`y`（`--option method=spearman`） | r / r_s、t、p、Fisher z CI；常態性 |
 | `linear-regression` | `outcome`、`predictors=a,b` | B、SE、β、t、p、CI；R²、F；殘差常態、Breusch-Pagan、VIF |
+| `wilcoxon-signed-rank` | `before`、`after`（scale 或 ordinal） | W+、z、p（exact 或常態近似）、r、rank-biserial r；中位數與四分位數 |
+| `mann-whitney-u` | `outcome`（scale 或 ordinal）、`group` | U、z、p（exact 或常態近似）、r、rank-biserial r；各組中位數 |
+| `fisher-exact` | `row`、`column`（皆二元） | 雙尾 p、條件最大概似勝算比與 CI、交叉表 |
 
 選項：`--option alpha=0.05`、`--option conf_level=0.95`。
 

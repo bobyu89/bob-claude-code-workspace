@@ -31,7 +31,8 @@ description: 解讀統計引擎回傳的假設檢查（常態性、變異數同�
 
 - 不自行計算檢定統計量；只引用 `results.json`。
 - 假設不符時不要自動換方法重跑；向研究者說明，由研究者決定是否建立新計畫。
-- 替代方法若 aistat 尚未支援（例如 Wilcoxon），如實告知。
+- 有對應替代方法時（Wilcoxon、Mann-Whitney、Fisher、Spearman），Gate B 理由會附上 `aistat plan --alternative-of <RUN>`；請研究者決定是否建立替代計畫，不要自己重組變項。
+- 替代方法若 aistat 尚未支援（例如 Kruskal-Wallis），如實告知。
 
 ## 測試案例
 

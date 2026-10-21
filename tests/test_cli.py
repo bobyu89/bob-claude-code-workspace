@@ -134,3 +134,13 @@ def test_export_and_rerun_via_cli(tmp_path):
     assert rerun.exit_code == 0 and "一致" in rerun.output
     assert exported.exit_code == 0, exported.output
     assert (ws_dir / "exports" / f"{run_id}.zip").is_file()
+
+
+def test_plan_alternative_of_via_cli(tmp_path):
+    ws_dir, run_id = _executed_run(tmp_path)
+
+    result = invoke(ws_dir, "plan", "--alternative-of", run_id)
+
+    assert result.exit_code == 0, result.output
+    assert "wilcoxon-signed-rank" in result.output
+    assert "[UNCERTAIN] pairing_structure" in result.output

@@ -25,6 +25,7 @@ class Effect:
     estimate: float | None = None  # the quantity the CI is for
     ci_lower: float | None = None
     ci_upper: float | None = None
+    implausible_above: float | None = 3.0  # |value| above this is flagged for a data check; None = no bound
 
 
 def cohen_d_label(d: float | None, lang: str) -> str:
