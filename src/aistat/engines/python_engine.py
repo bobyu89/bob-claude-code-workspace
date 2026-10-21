@@ -53,6 +53,7 @@ def shapiro(values, check_id, label):
 
 df = pd.read_csv(DATA, encoding="utf-8", dtype={c: str for c in PLAN.get("string_columns", [])})
 statistics, assumptions, warnings = {}, [], []
+diagnostics = None  # per-case values for figures (e.g. residuals); never quoted in reports
 '''
 
 FOOTER = '''
@@ -64,6 +65,7 @@ result = {
     "statistics": statistics,
     "assumptions": assumptions,
     "warnings": warnings,
+    "diagnostics": diagnostics,
 }
 with open(OUT, "w", encoding="utf-8") as f:
     json.dump(clean(result), f, ensure_ascii=False, indent=2, allow_nan=False)
@@ -282,6 +284,7 @@ statistics = {
     "f": fit.fvalue, "df1": int(fit.df_model), "df2": int(fit.df_resid), "f_p": fit.f_pvalue,
     "residual_se": math.sqrt(fit.mse_resid), "conf_level": O["conf_level"],
 }
+diagnostics = {"fitted": fit.fittedvalues.tolist(), "residuals": fit.resid.tolist()}
 # Breusch-Pagan, Koenker's studentized form: n × R² of squared residuals on the predictors.
 aux = sm.OLS(fit.resid ** 2, design).fit()
 bp = len(y) * aux.rsquared

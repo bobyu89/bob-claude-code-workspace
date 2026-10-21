@@ -205,16 +205,22 @@ def analyze(
     run_id: str,
     engine: str = typer.Option("auto", help="auto | r | python"),
     timeout: float = typer.Option(DEFAULT_TIMEOUT, help="引擎逾時秒數"),
+    figures: Optional[bool] = typer.Option(None, "--figures/--no-figures", help="是否產生圖表（預設依 AISTAT_FIGURES，未設定則產生）"),
 ) -> None:
     """以實際統計引擎執行已核准的分析計畫。"""
     ws = _ws()
-    run = ws.execute(run_id, engine=engine, timeout=timeout)
+    run = ws.execute(run_id, engine=engine, timeout=timeout, figures=figures)
     results = ws.results(run.id)
     typer.echo(f"{run.id} 已由 {results['engine']['version']} 執行完成。")
     typer.echo(reporting.headline(run.plan, results))
     for a in results.get("assumptions", []):
         flag = "違反" if a.get("violated") else ("未檢定" if a.get("violated") is None else "符合")
         typer.echo(f"  假設檢查 {a['label']}（{a['test']}）：{flag}")
+    drawn = run.manifest.get("figures")
+    if drawn and drawn["status"] == "ok":
+        typer.echo(f"圖表：{drawn['count']} 張（{run.dir / 'figures'}，PNG + SVG）")
+    elif drawn:
+        typer.echo(f"圖表未能產生（不影響統計結果）：{drawn['error']}")
     typer.echo(f"下一步：aistat review {run.id}")
 
 

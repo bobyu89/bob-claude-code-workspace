@@ -16,6 +16,15 @@ if os.environ.get("AISTAT_REQUIRE_R") and not HAS_R:
 requires_r = pytest.mark.skipif(not HAS_R, reason="Rscript not installed")
 
 
+@pytest.fixture(autouse=True)
+def _figures_only_where_tested(request, monkeypatch):
+    """Drawing figures spawns matplotlib on every execution; only tests marked `figures` pay for it."""
+    if request.node.get_closest_marker("figures") is None:
+        monkeypatch.setenv("AISTAT_FIGURES", "0")
+    else:
+        monkeypatch.delenv("AISTAT_FIGURES", raising=False)
+
+
 def make_workspace(tmp_path, *golden_files):
     ws = Workspace.init(tmp_path / "proj")
     for name in golden_files:

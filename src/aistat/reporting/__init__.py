@@ -85,7 +85,30 @@ def assumption_lines(results: dict, spec: MethodSpec, lang: str, plan: dict) -> 
     return lines
 
 
-def build_draft(plan: dict, results: dict, spec: MethodSpec, lang: str = "zh") -> str:
+def figure_lines(figures: dict | None, lang: str) -> list[str]:
+    zh = lang == "zh"
+    if not figures:
+        return []
+    heading = "## 圖表（Figures）" if zh else "## Figures"
+    if "failed" in figures:
+        note = ("圖表未能產生（不影響統計結果）：" if zh else "Figures could not be produced (the statistics are unaffected): ")
+        error = " ".join(figures["failed"].replace("`", "'").split())[:200]  # keep it one code span
+        return [heading, "", note + f"`{error}`", ""]
+    lines = [heading, ""]
+    for n, f in enumerate(figures["figures"], start=1):
+        lines += [f"**Figure {n}**", "", f"*{f['caption'][lang]}*", "", f"![Figure {n}]({f['file']}.png)", ""]
+    if figures.get("needs_cjk") and not figures.get("cjk_font"):
+        lines += [("圖中的中文標籤需要 CJK 字型才能正確顯示。請安裝 Noto Sans CJK TC（Windows 內建 Microsoft JhengHei、"
+                   "macOS 內建 PingFang TC），刪除 matplotlib 字型快取（`python -c \"import matplotlib; "
+                   "print(matplotlib.get_cachedir())\"` 顯示的資料夾），再以新的 run 重新分析。"
+                   if zh else "Chinese labels need a CJK font. Install Noto Sans CJK TC (Windows ships Microsoft "
+                              "JhengHei, macOS ships PingFang TC), delete the matplotlib font cache (the folder shown "
+                              "by `python -c \"import matplotlib; print(matplotlib.get_cachedir())\"`), then analyse "
+                              "again in a new run."), ""]
+    return lines
+
+
+def build_draft(plan: dict, results: dict, spec: MethodSpec, lang: str = "zh", figures: dict | None = None) -> str:
     r = method_report(plan["method"])
     zh = lang == "zh"
     method_name = spec.name_zh if zh else spec.name_en
@@ -105,6 +128,7 @@ def build_draft(plan: dict, results: dict, spec: MethodSpec, lang: str = "zh") -
     assumptions = assumption_lines(results, spec, lang, plan)
     if assumptions:
         lines += ["## 統計假設檢查（Assumption Checks）" if zh else "## Assumption Checks", "", *assumptions, ""]
+    lines += figure_lines(figures, lang)
     lines += ["## 研究限制（Limitations）" if zh else "## Limitations", "", r.limitations(lang), ""]
     return "\n".join(lines)
 

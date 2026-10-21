@@ -20,7 +20,8 @@ def validate(path, schema_name):
 @pytest.mark.parametrize("method,dataset,variables", [
     ("paired-t-test", "sleep_wide", {"before": "drug1", "after": "drug2"}),
     ("chi-square", "wards", {"row": "ward", "column": "passed"}),
-    ("linear-regression", "nurse_stress", {"outcome": "stress", "predictors": "age,years"}),
+    pytest.param("linear-regression", "nurse_stress", {"outcome": "stress", "predictors": "age,years"},
+                 marks=pytest.mark.figures),  # with figures: manifest "figures" + results "diagnostics"
     ("descriptives", "sleep_long", {"variables": "extra,drug"}),
 ])
 def test_run_files_match_schemas(tmp_path, method, dataset, variables):

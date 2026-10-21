@@ -136,6 +136,16 @@
     "executed_data_sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "figures": {
+      "description": "Outcome of the best-effort figure step; a failure never blocks the analysis.",
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {"enum": ["ok", "failed"]},
+        "count": {"type": "integer", "minimum": 0},
+        "error": {"type": "string"}
+      }
     }
   }
 }

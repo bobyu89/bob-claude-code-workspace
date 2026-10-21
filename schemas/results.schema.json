@@ -64,6 +64,14 @@
     },
     "warnings": {
       "type": "array"
+    },
+    "diagnostics": {
+      "description": "Per-case values for figures (linear-regression: fitted values and residuals); null otherwise.",
+      "type": ["object", "null"],
+      "properties": {
+        "fitted": {"type": "array", "items": {"type": "number"}},
+        "residuals": {"type": "array", "items": {"type": "number"}}
+      }
     }
   },
   "$defs": {

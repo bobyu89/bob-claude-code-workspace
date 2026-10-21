@@ -65,6 +65,24 @@ aistat export RUN_20261020_001               # zip 成果包，預設不含資�
 
 選項：`--option alpha=0.05`、`--option conf_level=0.95`。
 
+## 統計圖表
+
+每次分析完成後自動以 matplotlib 畫 1–2 張 APA 7 版面的圖（PNG 300 dpi + SVG），嵌入報告的「圖表（Figures）」段落：
+
+| 方法 | 圖 |
+|---|---|
+| 配對 t、Wilcoxon | 每位受試者前後測線圖，加上平均數或中位數 |
+| 獨立 t、Mann-Whitney、ANOVA | 各組箱形圖加個別觀察值 |
+| 卡方、Fisher | 各列類別內的比例堆疊長條圖 |
+| 相關 | 散布圖 |
+| 線性迴歸 | 單一預測變項時散布圖加迴歸線；殘差對配適值圖與殘差常態 Q-Q 圖 |
+| 描述統計 | 數值變項直方圖、類別變項長條圖 |
+
+- 圖上不寫 p 值或檢定統計量，只畫資料與引擎已輸出的數值（例如迴歸殘差）。
+- 中文欄位名稱需要 CJK 字型（例如 Noto Sans CJK、Microsoft JhengHei、PingFang）；找不到時圖照樣產生，報告會註記。
+- 畫圖失敗不影響分析狀態，報告照樣產生並寫明原因。
+- `aistat analyze <RUN> --no-figures` 或環境變數 `AISTAT_FIGURES=0` 可關閉圖表。
+
 ## 分析狀態機與 JEV
 
 ```text
@@ -87,6 +105,8 @@ runs/RUN_20261020_001/
 ├── data_dictionary.csv / quality_report.md
 ├── analysis.R 或 analysis.py   # 可獨立重跑的分析程式碼
 ├── raw_outputs/results.json    # 引擎原始輸出：報告數字的唯一來源
+├── figures.py             # 可獨立重跑的畫圖程式碼（python figures.py）
+├── figures/figure_N.png / .svg / figures.json
 ├── result_review.json     # JEV Gate B
 ├── statistical_report.md / learning_notes.md
 └── execution_log.json     # 只記錄中繼資料，不記錄資料值
