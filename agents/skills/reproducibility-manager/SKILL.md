@@ -19,7 +19,7 @@ description: 管理 aistat 分析紀錄的重現與成果包：查詢 run 狀態
 ## run 資料夾內容
 
 `manifest.json`（資料與輸出雜湊、引擎版本、確認紀錄）、`analysis_plan.json`、`method_review.json`（Gate A）、
-`analysis.R|py`、`raw_outputs/results.json`、`result_review.json`（Gate B）、`statistical_report.md`、
+`analysis.R|py`、`raw_outputs/results.json`、`figures.py` 與 `figures/`、`result_review.json`（Gate B）、`statistical_report.md`、
 `learning_notes.md`、`execution_log.json`、`data_dictionary.csv`、`quality_report.md`。
 
 ## 規則

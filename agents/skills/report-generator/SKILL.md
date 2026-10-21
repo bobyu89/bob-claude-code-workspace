@@ -17,12 +17,15 @@ run 狀態為 `EXECUTED`、`JEV_GATE_B` 或 `REPORT_GENERATED`。
 
 - `runs/<RUN>/statistical_report.md`：結果、假設檢查、研究限制、JEV 審查紀錄與聲明。
 - `mode="learning"` 時另有 `learning_notes.md`（見 `statistical-tutor`）。
+- 報告的「圖表（Figures）」段落以 `**Figure N**`、斜體標題與相對路徑嵌入 `figures/figure_N.png`；SVG 在同一資料夾。
 
 ## 寫作規則
 
 - 結果段落沿用 APA 7：統計符號斜體由排版處理；p 值不加前導零；小於 .001 寫 `p < .001`；同時報告效果量與 CI。
 - 研究限制段落保留；單組前後測、觀察性分組不可寫成因果。
 - 若研究者要改寫（例如加上研究脈絡），把整份草稿以 `draft` 傳入；Gate B 會再審一次。
+- 圖表標題只描述圖的內容，不加入圖上沒有、引擎也沒算過的數字。
+- 報告註記缺少 CJK 字型時，依報告的步驟安裝字型、清除 matplotlib 字型快取，再以新的 run 重新分析。不要在原 run 資料夾手動重畫：圖檔雜湊會改變，該 run 將無法匯出。
 
 ## 錯誤處理
 

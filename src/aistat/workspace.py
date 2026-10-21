@@ -24,6 +24,7 @@ import pandas as pd
 
 from . import data as datamod
 from . import engines, methods, quality, reporting, validation
+from . import figures as figuremod
 from .audit import append_jsonl, now_iso
 from .errors import EngineFailed, InvalidState, NotFound, PlanError, WorkspaceNotFound
 from .runs import Run
@@ -356,7 +357,8 @@ class Workspace:
 
     # ---- runs: execution -------------------------------------------------
 
-    def execute(self, run_id: str, engine: str = "auto", timeout: float = DEFAULT_TIMEOUT) -> Run:
+    def execute(self, run_id: str, engine: str = "auto", timeout: float = DEFAULT_TIMEOUT,
+                figures: bool | None = None) -> Run:
         run = self.get_run(run_id)
         run.require("USER_APPROVAL", "FAILED", action="執行分析",
                     hint="分析計畫須經使用者核准（`aistat approve`）後才能執行。")
@@ -400,7 +402,43 @@ class Workspace:
                 duration_s=duration, warnings=results.get("warnings", []))
         run.set_status("EXECUTED", engine=adapter.name)
         self._audit("analysis_executed", run_id=run.id, engine=adapter.name)
+        draw = figures_enabled() if figures is None else figures
+        if draw:
+            self._make_figures(run, data_path, timeout)
         return run
+
+    def _make_figures(self, run: Run, data_path: Path, timeout: float) -> None:
+        """Draw the run's figures. Best effort: a failure is recorded and never changes the analysis state."""
+        out = run.dir / "figures" / "figures.json"
+        if out.parent.exists():
+            shutil.rmtree(out.parent)
+        out.parent.mkdir()
+        script = run.write_text("figures.py", figuremod.render_script(run.plan, _relpath(data_path, run.dir)))
+        run.manifest["outputs"]["figures.py"] = datamod.sha256_file(script)
+        try:
+            engines.get_engine("python").run(script, data_path, out, cwd=run.dir, timeout=timeout)
+            info = json.loads(out.read_text(encoding="utf-8"))
+            files = [f"{f['file']}.{ext}" for f in info["figures"] for ext in ("png", "svg")]
+            run.manifest["outputs"].update({name: datamod.sha256_file(run.dir / name)
+                                            for name in ["figures/figures.json", *files]})
+            run.manifest["figures"] = {"status": "ok", "count": len(info["figures"])}
+            run.log("figures_created", count=len(info["figures"]), cjk_font=info.get("cjk_font"))
+        except Exception as e:  # noqa: BLE001 — best effort: no figure problem may fail the analysis
+            shutil.rmtree(out.parent, ignore_errors=True)  # no unhashed partial figures in the bundle
+            run.manifest["figures"] = {"status": "failed", "error": str(e)[:500]}
+            run.log("figures_failed", error=str(e)[:500])
+        run.save()
+
+    def _figures_info(self, run: Run) -> dict | None:
+        status = run.manifest.get("figures")
+        if not status:
+            return None
+        if status["status"] != "ok":
+            return {"failed": status["error"]}
+        try:
+            return json.loads((run.dir / "figures" / "figures.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:  # figures/ removed or redrawn by hand; export will flag the hashes
+            return {"failed": f"figures/figures.json 無法讀取：{e}"}
 
     def results(self, run_id: str) -> dict:
         run = self.get_run(run_id)
@@ -415,7 +453,8 @@ class Workspace:
         run = self.get_run(run_id)
         _check_lang(lang)
         plan = run.plan
-        return reporting.build_draft(plan, self.results(run.id), methods.get_method(plan["method"]), lang)
+        return reporting.build_draft(plan, self.results(run.id), methods.get_method(plan["method"]), lang,
+                                     figures=self._figures_info(run))
 
     def review(self, run_id: str, draft: str | None = None, lang: str = "zh") -> validation.Review:
         """JEV Gate B on a report draft (the generated one unless `draft` text is given)."""
@@ -586,6 +625,11 @@ def _bundle_readme(run: Run, include_data: bool) -> str:
         f"```bash\ncd {run.id}\n{runner} {script} {data} raw_outputs/results_rerun.json\n```\n\n"
         "比對 `raw_outputs/results_rerun.json` 與 `raw_outputs/results.json`；資料雜湊應與上方一致。\n"
     )
+
+
+def figures_enabled() -> bool:
+    """Figures are drawn unless AISTAT_FIGURES=0 (for machines without matplotlib, or fast test runs)."""
+    return os.environ.get("AISTAT_FIGURES", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 def _check_lang(lang: str) -> None:

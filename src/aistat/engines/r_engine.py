@@ -60,6 +60,7 @@ df <- read.csv(DATA, check.names = FALSE, na.strings = c("", "NA"), encoding = "
 statistics <- list()
 assumptions <- list()
 warnings_out <- list()
+diagnostics <- NULL  # per-case values for figures (e.g. residuals); never quoted in reports
 '''
 
 FOOTER = r'''
@@ -70,7 +71,8 @@ result <- list(
   n_input_rows = nrow(df),
   statistics = statistics,
   assumptions = assumptions,
-  warnings = warnings_out
+  warnings = warnings_out,
+  diagnostics = diagnostics
 )
 dir.create(dirname(OUT), showWarnings = FALSE, recursive = TRUE)
 writeBin(charToRaw(enc2utf8(to_json(result))), OUT)
@@ -288,6 +290,7 @@ statistics <- list(
   f_p = unname(pf(fs[1], fs[2], fs[3], lower.tail = FALSE)),
   residual_se = sm$sigma, conf_level = O$conf_level
 )
+diagnostics <- list(fitted = as.list(unname(fitted(fit))), residuals = as.list(unname(resid(fit))))
 # Breusch-Pagan, Koenker's studentized form: n x R^2 of squared residuals on the predictors.
 e2 <- resid(fit)^2
 bp <- length(y) * summary(lm(e2 ~ Xm))$r.squared

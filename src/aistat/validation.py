@@ -256,6 +256,7 @@ def _apply_confirmations(checks: list[Check], confirmations: list[dict]) -> Revi
 NUMBER = re.compile(r"(?<![A-Za-z0-9_.])-?(?:\d+\.\d+|\.\d+|\d+)(?![A-Za-z0-9_])")
 P_TOKEN = re.compile(r"(?<![A-Za-z])p\s*([=<>≤≥])\s*(-?\d*\.?\d+)")
 CODE_SPAN = re.compile(r"`[^`]*`")
+FIGURE_MARKUP = re.compile(r"!\[[^\]]*\]\([^)]*\)|\*\*Figure \d+\*\*")  # image links and APA figure labels
 SENTENCE_END = re.compile(r"[。！？\n]|[.!?](?=\s|$)")
 CAUSAL = re.compile(
     r"導致|造成|證明|證實|引起|歸因於|\bcaus(?:e|es|ed|ing)\b|\bprov(?:e|es|ed|ing)\b|\bled to\b"
@@ -329,6 +330,7 @@ def _audited_text(text: str, plan: dict) -> str:
 
     text = text.split(JEV_HEADING, 1)[0]
     text = CODE_SPAN.sub(" ", text)
+    text = FIGURE_MARKUP.sub(" ", text)
     for name in sorted({n for n in _labels(plan) if not NUMBER.fullmatch(n)}, key=len, reverse=True):
         # ASCII boundaries only: label "no" must not eat the "no" in "not"
         text = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", " ", text)
