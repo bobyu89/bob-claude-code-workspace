@@ -92,3 +92,23 @@ def test_agent_edited_draft_is_still_reviewed(ws):
                              draft="t(9) = 7.77, p = .001。這證明藥物有效。")
 
     assert is_error and "values_traceable" in message and "causal_language" in message
+
+
+def test_agent_can_draft_an_alternative_plan(ws):
+    server = create_server(ws.root)
+    _, plan = call(server, "create_analysis_plan", method="paired-t-test", variables=PAIRED)
+
+    _, alt = call(server, "create_analysis_plan", alternative_of=plan["run_id"])
+
+    assert alt["run_id"] != plan["run_id"]
+    assert alt["method"] == "wilcoxon-signed-rank"
+    assert "aistat approve" in alt["next_step"]
+
+
+def test_alternative_of_cannot_be_combined_with_method(ws):
+    server = create_server(ws.root)
+    _, plan = call(server, "create_analysis_plan", method="paired-t-test", variables=PAIRED)
+
+    is_error, message = call(server, "create_analysis_plan", alternative_of=plan["run_id"], method="paired-t-test")
+
+    assert is_error and "alternative_of" in message

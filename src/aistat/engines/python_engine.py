@@ -69,7 +69,112 @@ with open(OUT, "w", encoding="utf-8") as f:
     json.dump(clean(result), f, ensure_ascii=False, indent=2, allow_nan=False)
 '''
 
+QUARTILES = '''
+
+def quartiles(values, suffix):
+    q1, med, q3 = np.percentile(np.asarray(values, dtype=float), [25, 50, 75])  # numpy "linear" = R type 7
+    return {f"median_{suffix}": med, f"q1_{suffix}": q1, f"q3_{suffix}": q3}
+'''
+
 METHOD_CODE = {
+    "fisher-exact": '''
+r, c = V["row"], V["column"]
+d = df[[r, c]].dropna()
+RL, CL = PLAN["levels"][r], PLAN["levels"][c]
+obs = np.array([[int(((d[r] == a) & (d[c] == b)).sum()) for b in CL] for a in RL])
+(a, b), (cc, dd) = obs
+m, n, k = a + b, cc + dd, a + cc
+lo, hi = max(0, k - n), min(k, m)
+support = np.arange(lo, hi + 1)
+log_base = stats.hypergeom.logpmf(support, m + n, m, k)
+
+
+def dist(theta):  # noncentral hypergeometric with odds ratio exp(theta)
+    w = log_base + theta * support
+    w = np.exp(w - w.max())
+    return w / w.sum()
+
+
+def solve(f, target):  # f increasing in theta; plain bisection, identical to the R engine
+    lo_t, hi_t = -100.0, 100.0
+    for _ in range(200):
+        mid = (lo_t + hi_t) / 2
+        if f(mid) < target:
+            lo_t = mid
+        else:
+            hi_t = mid
+    return math.exp((lo_t + hi_t) / 2)
+
+
+tail = (1 - O["conf_level"]) / 2
+estimate = 0.0 if a == lo else None if a == hi else solve(lambda t: float((support * dist(t)).sum()), a)
+ci_lower = 0.0 if a == lo else solve(lambda t: float(dist(t)[support >= a].sum()), tail)
+ci_upper = None if a == hi else solve(lambda t: -float(dist(t)[support <= a].sum()), -tail)
+statistics = {
+    "n": int(obs.sum()), "n_excluded": len(df) - int(obs.sum()),
+    "row_levels": RL, "column_levels": CL, "observed": obs.tolist(),
+    "row_proportions": (obs / obs.sum(axis=1, keepdims=True)).tolist(),
+    "p": stats.fisher_exact(obs).pvalue,
+    "odds_ratio": estimate, "ci_lower": ci_lower, "ci_upper": ci_upper,
+    "odds_ratio_infinite": bool(a == hi), "ci_upper_infinite": bool(a == hi), "conf_level": O["conf_level"],
+}
+''',
+    "mann-whitney-u": '''
+y, g = V["outcome"], V["group"]
+d = df[[y, g]].dropna()
+L1, L2 = PLAN["levels"][g]
+x1 = d.loc[d[g] == L1, y].to_numpy(dtype=float)
+x2 = d.loc[d[g] == L2, y].to_numpy(dtype=float)
+n1, n2 = len(x1), len(x2)
+N = n1 + n2
+_, counts = np.unique(np.concatenate([x1, x2]), return_counts=True)
+exact = bool(N <= 50 and (counts == 1).all())
+res = stats.mannwhitneyu(x1, x2, method="exact" if exact else "asymptotic", use_continuity=True)
+u = float(res.statistic)  # U for the first group, as R's W
+# Effect size from the tie-corrected normal approximation without continuity correction.
+sigma = math.sqrt(n1 * n2 / 12 * ((N + 1) - float((counts ** 3 - counts).sum()) / (N * (N - 1))))
+z = (u - n1 * n2 / 2) / sigma if sigma > 0 else None
+
+
+def group(level, x):
+    q1, med, q3 = np.percentile(x, [25, 50, 75])  # numpy "linear" = R type 7
+    return {"level": level, "n": len(x), "median": med, "q1": q1, "q3": q3}
+
+
+statistics = {
+    "n": N, "n_excluded": len(df) - N, "groups": [group(L1, x1), group(L2, x2)],
+    "exact": exact, "u": u, "p": res.pvalue, "z": z, "r": z / math.sqrt(N) if z is not None else None,
+    "rank_biserial": 2 * u / (n1 * n2) - 1,
+}
+''',
+    "wilcoxon-signed-rank": QUARTILES + '''
+d = df[[V["before"], V["after"]]].dropna()
+before = d[V["before"]].to_numpy(dtype=float)
+after = d[V["after"]].to_numpy(dtype=float)
+# Round away float noise relative to the measurements' magnitude (12 significant digits), so that
+# e.g. 100000.1 − 100000.0 and 5.1 − 5.0 tie. The R engine applies the same rule.
+scale = float(np.max(np.abs(np.concatenate([before, after])))) if len(before) else 0.0
+diff = np.round(after - before, 12 - int(math.floor(math.log10(scale))) if scale > 0 else 12)
+nz = diff[diff != 0]  # Wilcoxon's method: zero differences are dropped
+n = len(nz)
+if n == 0:
+    sys.exit("所有配對的差值都為零，無法進行 Wilcoxon signed-rank test。")
+ranks = stats.rankdata(np.abs(nz))
+w_plus, w_minus = float(ranks[nz > 0].sum()), float(ranks[nz < 0].sum())
+_, counts = np.unique(np.abs(nz), return_counts=True)
+exact = bool(n <= 50 and (counts == 1).all())
+res = stats.wilcoxon(nz, method="exact" if exact else "approx", correction=True)
+# Effect size from the tie-corrected normal approximation without continuity correction.
+sigma = math.sqrt(n * (n + 1) * (2 * n + 1) / 24 - float((counts ** 3 - counts).sum()) / 48)
+z = (w_plus - n * (n + 1) / 4) / sigma if sigma > 0 else None
+statistics = {
+    "n": n, "n_pairs": len(diff), "n_zero": int(len(diff) - n), "n_excluded": len(df) - len(diff),
+    "exact": exact, "w_plus": w_plus, "w_minus": w_minus, "p": res.pvalue,
+    "z": z, "r": z / math.sqrt(n) if z is not None else None,
+    "rank_biserial": (w_plus - w_minus) / (w_plus + w_minus),
+    **quartiles(before, "before"), **quartiles(after, "after"), **quartiles(diff, "diff"),
+}
+''',
     "descriptives": '''
 summaries = []
 for name in V["variables"]:

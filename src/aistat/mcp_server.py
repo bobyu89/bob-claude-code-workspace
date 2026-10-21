@@ -89,14 +89,24 @@ def create_server(workspace: Path | str) -> MCPServer:
         return {"variables": [v.to_dict() for v in ws().get_dictionary(dataset_id).values()]}
 
     @tool
-    def create_analysis_plan(method: str, variables: dict, dataset_id: str | None = None,
-                             options: dict | None = None) -> dict:
+    def create_analysis_plan(method: str | None = None, variables: dict | None = None, dataset_id: str | None = None,
+                             options: dict | None = None, alternative_of: str | None = None) -> dict:
         """Draft an analysis plan and run JEV Gate A. `variables` maps roles to columns,
-        e.g. {"before": "pre", "after": "post"}. Approval must come from the researcher."""
+        e.g. {"before": "pre", "after": "post"}. With `alternative_of` (a run ID), draft the
+        alternative method for that run instead (e.g. Wilcoxon for a paired t test whose
+        assumptions failed), reusing its dataset and variables. Approval must come from the researcher."""
         w = ws()
-        run = w.create_plan(method, variables, dataset_id=dataset_id, options=options)
+        if alternative_of:
+            if method or variables or dataset_id or options:
+                raise ToolError("alternative_of 會沿用原計畫的資料集與變項，不能同時提供 method、variables、dataset_id 或 options。")
+            run = w.create_alternative_plan(alternative_of)
+        elif method and variables:
+            run = w.create_plan(method, variables, dataset_id=dataset_id, options=options)
+        else:
+            raise ToolError("請提供 method 與 variables，或提供 alternative_of。")
         review = w.method_review(run.id)
-        return {"run_id": run.id, "status": run.status, "gate_a": review.to_dict(), "next_step": _next_step(run, review)}
+        return {"run_id": run.id, "method": run.plan["method"], "status": run.status, "gate_a": review.to_dict(),
+                "next_step": _next_step(run, review)}
 
     @tool
     def validate_analysis_plan(run_id: str) -> dict:

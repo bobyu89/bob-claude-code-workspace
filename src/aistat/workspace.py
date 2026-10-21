@@ -234,7 +234,7 @@ class Workspace:
         return Run(path)
 
     def create_plan(self, method: str, variables: dict, dataset_id: str | None = None,
-                    options: dict | None = None) -> Run:
+                    options: dict | None = None, alternative_of: str | None = None) -> Run:
         spec = methods.get_method(method)
         variables = methods.normalize_variables(spec, variables)
         options = methods.resolve_options(spec, options)
@@ -259,6 +259,8 @@ class Workspace:
             "assumptions": methods.planned_assumptions(spec, variables, options),
             **self._category_levels(ds.id, spec, variables),
         }
+        if alternative_of:
+            plan["alternative_of"] = alternative_of
         run.write_json("analysis_plan.json", plan)
         run.manifest["method"] = spec.id
         run.manifest["parameters"] = {"variables": variables, "options": options,
@@ -266,6 +268,18 @@ class Workspace:
         run.set_status("PLAN_DRAFTED", method=spec.id)
         self._audit("plan_created", run_id=run.id, dataset_id=ds.id, method=spec.id)
         return self.validate_plan(run.id)
+
+    def create_alternative_plan(self, run_id: str) -> Run:
+        """A new plan for the alternative method, with the original's dataset, variables, alpha and conf_level.
+        The original run is left untouched; the new plan goes through Gate A and approval like any other."""
+        original = self.get_run(run_id)
+        plan = original.plan
+        method, overrides = methods.alternative_for(plan)
+        options = {k: plan["options"][k] for k in methods.COMMON_OPTIONS} | overrides
+        run = self.create_plan(method, plan["variables"], dataset_id=plan["dataset_id"], options=options,
+                               alternative_of=original.id)
+        self._audit("alternative_plan_created", run_id=original.id, alternative_run_id=run.id, method=method)
+        return run
 
     def _category_levels(self, dataset_id: str, spec: methods.MethodSpec, variables: dict) -> dict:
         """Read categorical columns as text and fix their level order in the plan, so every engine

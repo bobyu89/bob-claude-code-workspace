@@ -36,8 +36,11 @@
       "enum": [
         "descriptives",
         "paired-t-test",
+        "wilcoxon-signed-rank",
         "independent-t-test",
+        "mann-whitney-u",
         "chi-square",
+        "fisher-exact",
         "correlation",
         "linear-regression"
       ]

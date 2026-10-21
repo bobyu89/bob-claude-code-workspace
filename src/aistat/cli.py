@@ -159,14 +159,24 @@ def _print_gate_a_next_step(ws: Workspace, run) -> None:
 @app.command()
 @handles_errors
 def plan(
-    method: str = typer.Option(..., help="統計方法，例如 paired-t-test"),
+    method: Optional[str] = typer.Option(None, help="統計方法，例如 paired-t-test"),
     var: list[str] = typer.Option([], "--var", help="變項角色，role=欄位，可重複"),
     option: list[str] = typer.Option([], "--option", help="方法選項，key=value，可重複"),
     dataset: Optional[str] = typer.Option(None, help="資料集 ID"),
+    alternative_of: Optional[str] = typer.Option(
+        None, "--alternative-of", help="以替代方法（例如無母數檢定）為這個 run 建立新計畫，沿用同一組變項"),
 ) -> None:
     """建立分析計畫並執行 JEV Gate A。"""
     ws = _ws()
-    run = ws.create_plan(method, _pairs(var, "--var"), dataset_id=dataset, options=_pairs(option, "--option"))
+    if alternative_of:
+        if method or var or option or dataset:
+            raise PlanError("--alternative-of 會沿用原計畫的方法對應、資料集與變項，不能再指定 --method、--var、--option 或 --dataset。")
+        run = ws.create_alternative_plan(alternative_of)
+        typer.echo(f"已為 {alternative_of} 建立替代計畫：{run.plan['method']}")
+    else:
+        if not method:
+            raise PlanError("請以 --method 指定統計方法，或用 --alternative-of RUN 建立替代計畫。")
+        run = ws.create_plan(method, _pairs(var, "--var"), dataset_id=dataset, options=_pairs(option, "--option"))
     _print_gate_a_next_step(ws, run)
 
 

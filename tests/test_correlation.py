@@ -70,3 +70,13 @@ def test_report_apa_correlation(ws):
 
     assert "r(3) = .77, p = .124, 95% CI [-.34, .98]" in text
     assert "未達統計顯著" in text
+
+
+def test_learning_notes_read_the_interval_for_pearson(ws):
+    run, res = run_analysis(ws, "correlation", VARS, "python")
+    ws.report(run.id, mode="learning")
+
+    s = res["statistics"]
+    contains = s["ci_lower"] <= 0 <= s["ci_upper"]
+    notes = (run.dir / "learning_notes.md").read_text(encoding="utf-8")
+    assert ("區間包含 0" if contains else "區間不包含 0") in notes

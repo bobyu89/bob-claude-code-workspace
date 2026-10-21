@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 import pandas as pd
 
 from .data import Variable
-from .methods import MethodSpec, plan_columns
+from .methods import MethodSpec, alternative_command, plan_columns
 
 YES, NO, UNCERTAIN = "YES", "NO", "UNCERTAIN"
 GATE_A = "method_validation"
@@ -180,7 +180,9 @@ def _predictor_coding(plan, spec, complete, dictionary) -> Check:
 # method id -> extra Gate A checks: fn(plan, spec, complete_rows, dictionary) -> Check
 EXTRA_CHECKS: dict[str, tuple] = {
     "independent-t-test": (_group_structure,),
+    "mann-whitney-u": (_group_structure,),
     "chi-square": (_group_structure,),
+    "fisher-exact": (_group_structure,),
     "correlation": (_correlation_type,),
     "linear-regression": (_predictor_coding,),
 }
@@ -229,7 +231,7 @@ def _sample_size(spec: MethodSpec, complete: pd.DataFrame, plan: dict, df: pd.Da
 def _assumptions_planned(spec: MethodSpec, plan: dict) -> Check:
     planned = [a for a in spec.assumptions if a.id in plan["assumptions"]]
     if not planned:
-        return Check(GATE_A, "assumptions_planned", YES, "此分析沒有需要另外檢查的統計假設")
+        return Check(GATE_A, "assumptions_planned", YES, spec.no_assumption_note)
     labels = "、".join(a.label for a in planned)
     return Check(GATE_A, "assumptions_planned", YES, f"執行時由統計引擎檢查：{labels}", [a.id for a in planned])
 
@@ -259,7 +261,6 @@ CAUSAL = re.compile(
 NONSIG = re.compile(r"未達(?:統計)?顯著|不顯著|無顯著|沒有顯著|not statistically significant|non-?significant"
                     r"|not significant|did not reach (?:statistical )?significance", re.IGNORECASE)
 SIG = re.compile(r"達(?:到)?(?:統計)?顯著|statistically significant|\bsignificant(?:ly)?\b", re.IGNORECASE)
-LARGE_EFFECT = 3.0
 
 
 @dataclass
@@ -285,7 +286,7 @@ def gate_b(plan: dict, spec: MethodSpec, results: dict | None, text: str, proven
         _effect_size_ci(audited, report.effect(s)),
         _causal_language(audited, spec),
         _significance_consistency(audited, report.primary_p(s), plan["options"]["alpha"]),
-        _assumptions_met(results, spec),
+        _assumptions_met(results, spec, plan),
     ]
     return Review(GATE_B, checks)
 
@@ -398,7 +399,7 @@ def _effect_size_ci(text: str, effect) -> Check:
         return Check(GATE_B, "effect_size_ci", YES, "此方法不涉及效果量或信賴區間")
     evidence = [{"effect": effect.name, "value": effect.value, "ci": [effect.ci_lower, effect.ci_upper]}]
     if effect.value is None:
-        return Check(GATE_B, "effect_size_ci", UNCERTAIN, f"引擎未產生 {effect.name}（可能變異為 0）", evidence,
+        return Check(GATE_B, "effect_size_ci", UNCERTAIN, f"引擎未產生有限的 {effect.name}（可能變異為 0 或估計值為無限大）", evidence,
                      "review_manually")
     if effect.ci_lower is not None and effect.ci_upper is not None:
         if not effect.ci_lower < effect.ci_upper:
@@ -410,7 +411,7 @@ def _effect_size_ci(text: str, effect) -> Check:
     if missing:
         return Check(GATE_B, "effect_size_ci", UNCERTAIN, f"草稿未報告效果量或信賴區間（缺 {', '.join(missing)}）",
                      evidence, "fix_draft")
-    if abs(effect.value) > LARGE_EFFECT:
+    if effect.implausible_above is not None and abs(effect.value) > effect.implausible_above:
         return Check(GATE_B, "effect_size_ci", UNCERTAIN,
                      f"{effect.name} = {apa.num(effect.value)} 異常大，請確認資料是否有輸入錯誤或極端值", evidence,
                      "review_manually")
@@ -462,7 +463,7 @@ def _p_is_significant(op: str, value: str, alpha: float) -> bool | None:
     return False if v >= alpha else None
 
 
-def _assumptions_met(results: dict, spec: MethodSpec) -> Check:
+def _assumptions_met(results: dict, spec: MethodSpec, plan: dict) -> Check:
     alternatives = {a.id: a.alternative for a in spec.assumptions}
     relevant = [a for a in results.get("assumptions", []) if not a.get("informational")]
     violated = [a for a in relevant if a.get("violated")]
@@ -470,6 +471,9 @@ def _assumptions_met(results: dict, spec: MethodSpec) -> Check:
     evidence = results.get("assumptions", [])
     if violated:
         detail = "；".join(f"{a['label']}未符合，{alternatives.get(a['id'], '請考慮其他方法')}" for a in violated)
+        command = alternative_command(plan)
+        if command:
+            detail += f"；可執行 `{command}` 建立替代計畫（仍須通過 Gate A 並由研究者核准）"
         return Check(GATE_B, "assumptions_met", UNCERTAIN, detail, evidence, "review_manually")
     if untested:
         return Check(GATE_B, "assumptions_met", UNCERTAIN,

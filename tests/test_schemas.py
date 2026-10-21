@@ -33,3 +33,16 @@ def test_run_files_match_schemas(tmp_path, method, dataset, variables):
     validate(run.dir / "result_review.json", "jev_review.schema.json")
     validate(run.dir / "raw_outputs" / "results.json", "results.schema.json")
     validate(run.dir / "manifest.json", "manifest.schema.json")
+
+
+@pytest.mark.parametrize("schema_name,pointer", [
+    ("analysis_plan.schema.json", ("properties", "method", "enum")),
+    ("results.schema.json", ("properties", "method", "enum")),
+])
+def test_schema_lists_every_registered_method(schema_name, pointer):
+    from aistat.methods import METHODS
+
+    node = json.loads((SCHEMAS / schema_name).read_text(encoding="utf-8"))
+    for key in pointer:
+        node = node[key]
+    assert sorted(node) == sorted(METHODS)

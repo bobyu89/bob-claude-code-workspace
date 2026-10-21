@@ -34,6 +34,16 @@ class Assumption:
 
 
 @dataclass(frozen=True)
+class Alternative:
+    """The method to switch to when this method's assumptions fail (`aistat plan --alternative-of`)."""
+
+    method: str
+    options: tuple[tuple[str, str], ...] = ()  # option overrides for the new plan
+    requires: tuple[tuple[str, str], ...] = ()  # only offered when the original plan has these options
+    two_by_two: bool = False  # only offered when every categorical role has exactly two levels
+
+
+@dataclass(frozen=True)
 class MethodSpec:
     id: str
     name_zh: str
@@ -49,6 +59,8 @@ class MethodSpec:
     exact_groups: int | None = None  # categorical roles must have exactly this many levels
     min_per_group: int = 1  # minimum valid cases per level of a categorical role
     text_unless_scale: bool = False  # read every non-scale variable of the multiple role as text (descriptives)
+    alternative: Alternative | None = None
+    no_assumption_note: str = "此分析沒有需要另外檢查的統計假設"  # Gate A wording when nothing is tested
 
     def role(self, name: str) -> Role:
         return next(r for r in self.roles if r.name == name)
@@ -95,9 +107,26 @@ _register(
         ),
         design_checks=("pairing_structure",),
         options={"alternative": ("two-sided",)},
+        alternative=Alternative("wilcoxon-signed-rank"),
     )
 )
 
+
+_register(
+    MethodSpec(
+        id="wilcoxon-signed-rank",
+        name_zh="Wilcoxon 符號等級檢定",
+        name_en="Wilcoxon signed-rank test",
+        roles=(
+            Role("before", "前測（或條件一）", ("scale", "ordinal"), numeric=True),
+            Role("after", "後測（或條件二）", ("scale", "ordinal"), numeric=True),
+        ),
+        missing_strategy="complete-pairs",
+        min_n=3,
+        design_checks=("pairing_structure",),
+        no_assumption_note="以等級計算，不需要常態假設；假設差值分布大致對稱、觀察值互相獨立",
+    )
+)
 
 _register(
     MethodSpec(
@@ -121,9 +150,28 @@ _register(
         string_roles=("group",),
         exact_groups=2,
         min_per_group=2,
+        alternative=Alternative("mann-whitney-u"),
     )
 )
 
+_register(
+    MethodSpec(
+        id="mann-whitney-u",
+        name_zh="Mann-Whitney U 檢定",
+        name_en="Mann-Whitney U test",
+        roles=(
+            Role("outcome", "結果變項", ("scale", "ordinal"), numeric=True),
+            Role("group", "分組變項", ("nominal", "ordinal")),
+        ),
+        missing_strategy="listwise",
+        min_n=4,
+        design_checks=("independence",),
+        string_roles=("group",),
+        exact_groups=2,
+        min_per_group=2,
+        no_assumption_note="以等級計算，不需要常態假設；假設觀察值互相獨立",
+    )
+)
 
 _register(
     MethodSpec(
@@ -142,9 +190,28 @@ _register(
         ),
         design_checks=("independence",),
         string_roles=("row", "column"),
+        alternative=Alternative("fisher-exact", two_by_two=True),
     )
 )
 
+
+_register(
+    MethodSpec(
+        id="fisher-exact",
+        name_zh="Fisher 精確檢定",
+        name_en="Fisher's exact test",
+        roles=(
+            Role("row", "列變項", ("nominal", "ordinal")),
+            Role("column", "欄變項", ("nominal", "ordinal")),
+        ),
+        missing_strategy="listwise",
+        min_n=2,
+        design_checks=("independence",),
+        string_roles=("row", "column"),
+        exact_groups=2,
+        no_assumption_note="精確機率計算，不需要常態或期望次數假設；假設觀察值互相獨立",
+    )
+)
 
 _register(
     MethodSpec(
@@ -162,6 +229,7 @@ _register(
                        when=(("method", "pearson"),)),
         ),
         options={"method": ("pearson", "spearman")},
+        alternative=Alternative("correlation", options=(("method", "spearman"),), requires=(("method", "pearson"),)),
     )
 )
 
@@ -189,6 +257,28 @@ _register(
         ),
     )
 )
+
+
+def alternative_for(plan: dict) -> tuple[str, dict]:
+    """(method, option overrides) for `--alternative-of`, or PlanError explaining why there is none."""
+    spec = get_method(plan["method"])
+    alt = spec.alternative
+    if alt is None or any(plan["options"].get(k) != v for k, v in alt.requires):
+        raise PlanError(f"{spec.name_zh}（{plan['method']}）沒有對應的替代方法。")
+    if alt.two_by_two:
+        shape = [len(plan["levels"].get(plan["variables"][r], [])) for r in spec.string_roles]
+        if shape != [2, 2]:
+            raise PlanError(f"沒有替代方法：{get_method(alt.method).name_en} 只支援 2 × 2 交叉表，"
+                            f"此計畫為 {' × '.join(map(str, shape))}。")
+    return alt.method, dict(alt.options)
+
+
+def alternative_command(plan: dict) -> str | None:
+    try:
+        alternative_for(plan)
+    except PlanError:
+        return None
+    return f"aistat plan --alternative-of {plan['run_id']}"
 
 
 def get_method(method: str) -> MethodSpec:
