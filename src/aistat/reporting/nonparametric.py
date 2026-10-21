@@ -7,14 +7,33 @@ from ..methods import MethodSpec
 from .common import Effect, significance_sentence
 
 
-def r_effect_label(r: float | None, lang: str) -> str:
-    """Cohen's benchmarks for r (.1 / .3 / .5), used for r = Z / √N."""
-    if r is None:
-        return ""
+def r_size(r: float, lang: str) -> str:
+    """Cohen's benchmarks for r-type effect sizes (.1 / .3 / .5)."""
     size = abs(r)
     zh, en = (("微小", "negligible") if size < 0.1 else ("小", "small") if size < 0.3
               else ("中等", "medium") if size < 0.5 else ("大", "large"))
-    return f"依 Cohen（1988）的慣例屬於{zh}效果量" if lang == "zh" else f"a {en} effect by Cohen's (1988) convention"
+    return zh if lang == "zh" else en
+
+
+def r_effect_label(r: float | None, lang: str) -> str:
+    if r is None:
+        return ""
+    return (f"依 Cohen（1988）的慣例屬於{r_size(r, 'zh')}效果量" if lang == "zh"
+            else f"a {r_size(r, 'en')} effect by Cohen's (1988) convention")
+
+
+def effect_sentence(s: dict, lang: str) -> str:
+    """Size labels for both r = Z / √N and the rank-biserial correlation."""
+    rb = s["rank_biserial"]
+    if lang == "zh":
+        parts = []
+        if s["r"] is not None:
+            parts.append(f"r 屬於{r_size(s['r'], 'zh')}效果量")
+        parts.append(f"rank-biserial r 屬於{r_size(rb, 'zh')}效果量")
+        return "依 Cohen（1988）的慣例，" + "、".join(parts) + "。"
+    parts = [f"r is a {r_size(s['r'], 'en')} effect"] if s["r"] is not None else []
+    parts.append(f"the rank-biserial r is a {r_size(rb, 'en')} effect")
+    return " By Cohen's (1988) convention, " + " and ".join(parts) + "."
 
 
 def p_method(exact: bool, lang: str) -> str:
@@ -56,8 +75,7 @@ class WilcoxonReport:
                     f"{a}（{iqr(s, 'after')}）{direction} {b}（{iqr(s, 'before')}）"
                     + ("相近" if not (higher or lower) else "")
                     + f"，差值中位數為 {apa.num(s['median_diff'])}；{stats}，{p_method(s['exact'], 'zh')}。"
-                    + significance_sentence(s["p"], o["alpha"], "zh")
-                    + (f"{r_effect_label(s['r'], 'zh')}。" if s["r"] is not None else ""))
+                    + significance_sentence(s["p"], o["alpha"], "zh") + effect_sentence(s, "zh"))
         notes = []
         if s["n_zero"]:
             notes.append(f"{s['n_zero']} pairs with zero difference excluded")
@@ -68,8 +86,7 @@ class WilcoxonReport:
                 + ("; " + "; ".join(notes) if notes else "") + "). "
                 f"Scores for {a} ({iqr(s, 'after')}) {direction} {b} ({iqr(s, 'before')}); the median difference was "
                 f"{apa.num(s['median_diff'])}, {stats.replace('（', ' (').replace('）', ')')}; {p_method(s['exact'], 'en')}. "
-                + significance_sentence(s["p"], o["alpha"], "en")
-                + (f" This is {r_effect_label(s['r'], 'en')}." if s["r"] is not None else ""))
+                + significance_sentence(s["p"], o["alpha"], "en") + effect_sentence(s, "en"))
 
     def limitations(self, lang) -> str:
         if lang == "zh":
@@ -145,8 +162,7 @@ class MannWhitneyReport:
             dropped = f"，排除 {s['n_excluded']} 筆缺失" if s["n_excluded"] else ""
             return (f"以 Mann-Whitney U test 比較 {g} 兩組的 {y}（n = {s['n']}{dropped}）。"
                     f"{desc[0]}的 {y} {direction} {desc[1]}；{stats}，{p_method(s['exact'], 'zh')}。"
-                    + significance_sentence(s["p"], o["alpha"], "zh")
-                    + (f"{r_effect_label(s['r'], 'zh')}。" if s["r"] is not None else ""))
+                    + significance_sentence(s["p"], o["alpha"], "zh") + effect_sentence(s, "zh"))
         desc_en = [f"{x['level']} (n = {x['n']}, Mdn = {apa.num(x['median'])}, IQR = {apa.num(x['q1'])}–{apa.num(x['q3'])})"
                    for x in (g1, g2)]
         direction = "tended to be higher than" if rb > 0 else "tended to be lower than" if rb < 0 else "were similar to"
@@ -154,8 +170,7 @@ class MannWhitneyReport:
         return (f"A Mann-Whitney U test compared {y} between the {g} groups (n = {s['n']}{dropped}). "
                 f"Values in {desc_en[0]} {direction} those in {desc_en[1]}, "
                 f"{stats.replace('（', ' (').replace('）', ')')}; {p_method(s['exact'], 'en')}. "
-                + significance_sentence(s["p"], o["alpha"], "en")
-                + (f" This is {r_effect_label(s['r'], 'en')}." if s["r"] is not None else ""))
+                + significance_sentence(s["p"], o["alpha"], "en") + effect_sentence(s, "en"))
 
     def limitations(self, lang) -> str:
         if lang == "zh":

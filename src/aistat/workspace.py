@@ -278,7 +278,7 @@ class Workspace:
         options = {k: plan["options"][k] for k in methods.COMMON_OPTIONS} | overrides
         run = self.create_plan(method, plan["variables"], dataset_id=plan["dataset_id"], options=options,
                                alternative_of=original.id)
-        original.log("alternative_plan_created", alternative_run_id=run.id, method=method)
+        self._audit("alternative_plan_created", run_id=original.id, alternative_run_id=run.id, method=method)
         return run
 
     def _category_levels(self, dataset_id: str, spec: methods.MethodSpec, variables: dict) -> dict:

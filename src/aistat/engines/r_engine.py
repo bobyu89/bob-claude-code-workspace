@@ -154,7 +154,10 @@ statistics <- list(
 d <- df[complete.cases(df[, c(V$before, V$after)]), c(V$before, V$after), drop = FALSE]
 before <- as.numeric(d[[V$before]])
 after <- as.numeric(d[[V$after]])
-diffs <- round(after - before, 12)  # Python rounds the same way, so float noise never splits a tie
+# Round away float noise relative to the measurements' magnitude (12 significant digits), so that
+# e.g. 100000.1 - 100000.0 and 5.1 - 5.0 tie. The Python engine applies the same rule.
+scale <- if (length(before) > 0) max(abs(c(before, after))) else 0
+diffs <- round(after - before, if (scale > 0) 12 - floor(log10(scale)) else 12)
 nz <- diffs[diffs != 0]  # Wilcoxon's method: zero differences are dropped
 n <- length(nz)
 if (n == 0) stop("所有配對的差值都為零，無法進行 Wilcoxon signed-rank test。")

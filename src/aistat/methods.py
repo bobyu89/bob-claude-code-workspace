@@ -60,6 +60,7 @@ class MethodSpec:
     min_per_group: int = 1  # minimum valid cases per level of a categorical role
     text_unless_scale: bool = False  # read every non-scale variable of the multiple role as text (descriptives)
     alternative: Alternative | None = None
+    no_assumption_note: str = "此分析沒有需要另外檢查的統計假設"  # Gate A wording when nothing is tested
 
     def role(self, name: str) -> Role:
         return next(r for r in self.roles if r.name == name)
@@ -123,6 +124,7 @@ _register(
         missing_strategy="complete-pairs",
         min_n=3,
         design_checks=("pairing_structure",),
+        no_assumption_note="以等級計算，不需要常態假設；假設差值分布大致對稱、觀察值互相獨立",
     )
 )
 
@@ -167,6 +169,7 @@ _register(
         string_roles=("group",),
         exact_groups=2,
         min_per_group=2,
+        no_assumption_note="以等級計算，不需要常態假設；假設觀察值互相獨立",
     )
 )
 
@@ -206,6 +209,7 @@ _register(
         design_checks=("independence",),
         string_roles=("row", "column"),
         exact_groups=2,
+        no_assumption_note="精確機率計算，不需要常態或期望次數假設；假設觀察值互相獨立",
     )
 )
 
@@ -264,7 +268,8 @@ def alternative_for(plan: dict) -> tuple[str, dict]:
     if alt.two_by_two:
         shape = [len(plan["levels"].get(plan["variables"][r], [])) for r in spec.string_roles]
         if shape != [2, 2]:
-            raise PlanError(f"沒有替代方法：Fisher's exact test 只支援 2 × 2 交叉表，此計畫為 {' × '.join(map(str, shape))}。")
+            raise PlanError(f"沒有替代方法：{get_method(alt.method).name_en} 只支援 2 × 2 交叉表，"
+                            f"此計畫為 {' × '.join(map(str, shape))}。")
     return alt.method, dict(alt.options)
 
 

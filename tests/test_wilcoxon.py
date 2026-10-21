@@ -81,3 +81,30 @@ def test_report_apa_and_passes_gate_b(ws):
     assert "精確" in text
     assert not ws.review(run.id, draft=text).by_verdict("NO")
     assert "Wilcoxon" in (run.dir / "learning_notes.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("engine", ["python", pytest.param("r", marks=requires_r)])
+def test_ties_are_detected_for_large_measurements(ws, tmp_path, engine):
+    # 100000.1 − 100000.0 and 5.1 − 5.0 are both 0.1, but float noise at 1e5 is far above 1e-12
+    from conftest import write_dataset
+
+    write_dataset(ws, tmp_path, "big.csv",
+                  "pre,post\n100000.0,100000.1\n5.0,5.1\n10.0,10.7\n20.0,20.3\n30.0,30.9\n40.0,39.6\n")
+
+    _, res = run_analysis(ws, "wilcoxon-signed-rank", {"before": "pre", "after": "post"}, engine, dataset_id="big")
+
+    assert res["statistics"]["exact"] is False
+
+
+def test_report_describes_both_effect_sizes(ws):
+    run, _ = run_analysis(ws, "wilcoxon-signed-rank", HW, "python", dataset_id="hollander_wolfe")
+
+    text = ws.report(run.id).read_text(encoding="utf-8")
+
+    assert "rank-biserial r 屬於大效果量" in text
+
+
+def test_gate_a_says_no_normality_assumption_is_needed(ws):
+    run = ws.create_plan("wilcoxon-signed-rank", HW, dataset_id="hollander_wolfe")
+
+    assert "不需要常態" in check(ws.method_review(run.id), "assumptions_planned").reason

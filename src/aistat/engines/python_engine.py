@@ -151,7 +151,10 @@ statistics = {
 d = df[[V["before"], V["after"]]].dropna()
 before = d[V["before"]].to_numpy(dtype=float)
 after = d[V["after"]].to_numpy(dtype=float)
-diff = np.round(after - before, 12)  # R rounds the same way, so float noise never splits a tie
+# Round away float noise relative to the measurements' magnitude (12 significant digits), so that
+# e.g. 100000.1 − 100000.0 and 5.1 − 5.0 tie. The R engine applies the same rule.
+scale = float(np.max(np.abs(np.concatenate([before, after])))) if len(before) else 0.0
+diff = np.round(after - before, 12 - int(math.floor(math.log10(scale))) if scale > 0 else 12)
 nz = diff[diff != 0]  # Wilcoxon's method: zero differences are dropped
 n = len(nz)
 if n == 0:

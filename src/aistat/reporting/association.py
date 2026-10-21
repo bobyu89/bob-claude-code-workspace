@@ -66,7 +66,8 @@ class CorrelationReport:
                                        + ("偏離常態，可考慮 Spearman" if a["violated"] else "沒有證據顯示偏離常態"))
             for a in results["assumptions"]) or "- Spearman 以等級計算，不需要常態假設。"
         ci = (f"{apa.num(100 * s['conf_level'], 0)}% CI [{apa.bounded(s['ci_lower'])}, {apa.bounded(s['ci_upper'])}]："
-              f"母體相關係數的合理範圍；區間{'不包含' if sig else '包含'} 0。") if pearson else "Spearman 相關本平台不計算信賴區間。"
+              f"母體相關係數的合理範圍；區間{'包含' if s['ci_lower'] <= 0 <= s['ci_upper'] else '不包含'} 0"
+              "（Fisher z 區間與 t 檢定的 p 值算法不同，兩者在邊界附近可能不一致）。") if pearson else "Spearman 相關本平台不計算信賴區間。"
         return f"""# 學習筆記：{spec.name_zh}
 
 ## 1. 目前的研究問題是什麼？

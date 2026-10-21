@@ -69,3 +69,12 @@ def test_gate_b_and_report_point_to_the_alternative_command(ws):
     command = f"aistat plan --alternative-of {run.id}"
     assert command in reason
     assert f"`{command}`" in text.split("## JEV")[0]
+
+
+def test_original_run_files_are_untouched(ws):
+    original = ws.create_plan("paired-t-test", PAIRED, dataset_id="sleep_wide")
+    before = {p.name: p.read_bytes() for p in original.dir.iterdir() if p.is_file()}
+
+    ws.create_alternative_plan(original.id)
+
+    assert {p.name: p.read_bytes() for p in original.dir.iterdir() if p.is_file()} == before

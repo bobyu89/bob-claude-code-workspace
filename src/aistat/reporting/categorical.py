@@ -156,6 +156,8 @@ class FisherReport:
         r, c = plan["variables"]["row"], plan["variables"]["column"]
         (r1, r2), (c1, _) = s["row_levels"], s["column_levels"]
         sig = apa.significant(s["p"], plan["options"]["alpha"])
+        # Fisher's two-sided p and the central CI are computed differently and can disagree: read the CI itself.
+        excludes_one = s["ci_lower"] > 1 or (s["ci_upper"] is not None and s["ci_upper"] < 1)
         return f"""# 學習筆記：{spec.name_zh}
 
 ## 1. 目前的研究問題是什麼？
@@ -183,7 +185,8 @@ class FisherReport:
 ## 5. 如何解讀效果量與信賴區間？
 
 - 勝算比 OR = {odds_ratio_text(s['odds_ratio'])}：`{r1}` 組中 `{c1}` 的勝算是 `{r2}` 組的幾倍；OR = 1 代表沒有關聯。
-- 信賴區間 [{apa.num(s['ci_lower'])}, {odds_ratio_text(s['ci_upper'])}]：{'不包含' if sig else '包含'} 1。區間很寬時，代表樣本太小，無法精確估計關聯強度。
+- 信賴區間 [{apa.num(s['ci_lower'])}, {odds_ratio_text(s['ci_upper'])}]：{'不包含' if excludes_one else '包含'} 1。區間很寬時，代表樣本太小，無法精確估計關聯強度。
+  Fisher 的雙尾 p 值與信賴區間是兩種不同的計算，偶爾會出現 p 達顯著、區間卻包含 1 的情形，此時結論應保守。
 
 ## 6. 這個結果可以支持什麼結論？
 

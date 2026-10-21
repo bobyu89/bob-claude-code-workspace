@@ -97,6 +97,8 @@ def create_server(workspace: Path | str) -> MCPServer:
         assumptions failed), reusing its dataset and variables. Approval must come from the researcher."""
         w = ws()
         if alternative_of:
+            if method or variables or dataset_id or options:
+                raise ToolError("alternative_of 會沿用原計畫的資料集與變項，不能同時提供 method、variables、dataset_id 或 options。")
             run = w.create_alternative_plan(alternative_of)
         elif method and variables:
             run = w.create_plan(method, variables, dataset_id=dataset_id, options=options)

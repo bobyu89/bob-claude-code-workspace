@@ -231,7 +231,7 @@ def _sample_size(spec: MethodSpec, complete: pd.DataFrame, plan: dict, df: pd.Da
 def _assumptions_planned(spec: MethodSpec, plan: dict) -> Check:
     planned = [a for a in spec.assumptions if a.id in plan["assumptions"]]
     if not planned:
-        return Check(GATE_A, "assumptions_planned", YES, "此分析沒有需要另外檢查的統計假設")
+        return Check(GATE_A, "assumptions_planned", YES, spec.no_assumption_note)
     labels = "、".join(a.label for a in planned)
     return Check(GATE_A, "assumptions_planned", YES, f"執行時由統計引擎檢查：{labels}", [a.id for a in planned])
 
